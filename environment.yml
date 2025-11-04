@@ -1,0 +1,17 @@
+name: rl_jax
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  # Base Python
+  - python=3.13.8
+  - pip
+  - tqdm
+  - pip:
+      - jax[cuda13]
+      - flax
+      - optax
+      - gymnax
+      - rlax
+      - tensorboardX
+      - tensorboard

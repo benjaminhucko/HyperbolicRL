@@ -1,0 +1,108 @@
+from abc import abstractmethod
+
+from flax import struct
+import jax
+import jax.numpy as jnp
+
+@struct.dataclass
+class ReplayBuffer:
+    obs: jnp.ndarray
+    actions: jnp.ndarray
+    rewards: jnp.ndarray
+    next_obs: jnp.ndarray
+    dones: jnp.ndarray
+    ptr: int = 0
+    size: int = 0
+    max_size: int = 10000
+
+    @classmethod
+    def create(cls, env, env_params, max_size=10000):
+        obs_shape = env.observation_space(env_params).shape
+        buffer = ReplayBuffer(
+            obs=jnp.zeros((max_size, *obs_shape), dtype=jnp.float32),
+            actions=jnp.zeros((max_size,), dtype=jnp.int32),
+            rewards=jnp.zeros((max_size,), dtype=jnp.float32),
+            next_obs=jnp.zeros((max_size, *obs_shape), dtype=jnp.float32),
+            dones=jnp.zeros((max_size,), dtype=jnp.float32),
+            ptr=0,
+            size=0,
+            max_size=max_size
+        )
+        return buffer
+
+    def add_data(self, obs, actions, rewards, next_obs, dones, _):
+        obs = obs.reshape(-1, *obs.shape[2:])
+        actions = actions.reshape(-1)
+        rewards = rewards.reshape(-1)
+        next_obs = next_obs.reshape(-1, *next_obs.shape[2:])
+        dones = dones.reshape(-1)
+
+        batch_size = obs.shape[0]
+        start = self.ptr
+        end = self.ptr + batch_size
+        idxs = jnp.arange(start, end) % self.max_size
+
+        buffer = ReplayBuffer(
+            obs=self.obs.at[idxs].set(obs),
+            actions=self.actions.at[idxs].set(actions),
+            rewards=self.rewards.at[idxs].set(rewards),
+            next_obs=self.next_obs.at[idxs].set(next_obs),
+            dones=self.dones.at[idxs].set(dones),
+            ptr=end % self.max_size,
+            size=jnp.minimum(self.size + batch_size, self.max_size),
+            max_size=self.max_size
+        )
+        return buffer
+
+    def sample_batch(self, batch_size, rng):
+        max_index = self.size
+        idxs = jax.random.randint(rng, (batch_size,), 0, max_index)
+
+        return self.obs[idxs], self.actions[idxs], self.rewards[idxs], self.next_obs[idxs], self.dones[idxs]
+
+@struct.dataclass
+class RolloutBuffer:
+    obs: jnp.ndarray
+    actions: jnp.ndarray
+    rewards: jnp.ndarray
+    dones: jnp.ndarray
+    log_probs: jnp.ndarray
+    values: jnp.ndarray
+
+    @classmethod
+    def create(cls, env, env_params, max_size=1):
+        obs_shape = env.observation_space(env_params).shape
+
+        buffer = RolloutBuffer(
+            obs=jnp.empty((max_size, *obs_shape), dtype=jnp.float32),
+            actions=jnp.zeros((max_size,), dtype=jnp.int32),
+            rewards=jnp.zeros((max_size,), dtype=jnp.float32),
+            dones=jnp.zeros((max_size,), dtype=jnp.float32),
+            log_probs=jnp.zeros((max_size, ), dtype=jnp.float32),
+            values=jnp.zeros((max_size,), dtype=jnp.float32),
+        )
+        return buffer
+
+    def add_data(self, obs, actions, rewards, _, dones, policy_aux):
+        buffer = RolloutBuffer(
+            obs=obs,
+            actions=actions,
+            rewards=rewards,
+            dones=dones,
+            log_probs=policy_aux['log_probs'],
+            values=policy_aux['values'],
+        )
+        return buffer
+
+    def get(self):
+        return self.obs, self.actions, self.rewards, self.dones, self.log_probs, self.values
+
+
+def make_buffer(config, env, env_params):
+    if config.strategy == 'dqn':
+        return ReplayBuffer.create(env, env_params, config.buffer_size)
+    elif config.strategy == 'ppo':
+        return RolloutBuffer.create(env, env_params)
+    else:
+        raise NotImplementedError(f'{config.strategy} does not have a buffer')
+

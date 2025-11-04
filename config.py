@@ -1,0 +1,29 @@
+import argparse
+
+
+def get_config():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--seed', type=int, default=0)
+    parser.add_argument('--env-name', type=str, default='Breakout-MinAtar')
+    parser.add_argument('--strategy', type=str, default='dqn')
+    parser.add_argument('--num-envs', type=int, default=16)
+
+
+    parser.add_argument('--update-after', type=int, default=100)
+    parser.add_argument('--update-every', type=int, default=100)
+    parser.add_argument('--num-updates', type=int, default=300)
+
+    parser.add_argument('--gamma', type=float, default=0.99)
+    parser.add_argument('--gae-lambda', type=float, default=0.95)
+
+    parser.add_argument('--lr', type=float, default=1e-3)
+    parser.add_argument('--n-epochs', type=int, default=5)
+    parser.add_argument('--batch-size', type=int, default=256)
+
+    parser.add_argument('--value-weight', type=float, default=0.5)
+    parser.add_argument('--clip-threshold', type=float, default=0.1)
+    parser.add_argument('--entorpy-weight', type=float, default=0.01)
+
+    parser.add_argument('--buffer_size', type=int, default=10000)
+
+    return parser.parse_args()
