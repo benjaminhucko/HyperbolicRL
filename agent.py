@@ -1,14 +1,16 @@
 from abc import abstractmethod, ABC
 
 import distrax
-import jax.numpy as jnp
 import jax
-from jax import vmap
+import jax.numpy as jnp
+import optax
+from flax.training import train_state
+from flax.core import FrozenDict
 
-from network_utils import create_train_state, network_forward, train_step, q_loss_fn, ppo_loss_fn
+from network_utils import network_init, network_forward, train_step
 from neural_networks import CNN
+from rl_helpers import generalized_advantage_estimation, q_loss_fn, ppo_loss_fn
 
-import rlax
 
 class Agent(ABC):
     def __init__(self, env, env_params, config):
@@ -47,8 +49,13 @@ class DQNAgent(Agent):
         super().__init__(env, env_params, config)
         self.network = CNN(self.n_actions)
 
+    class DQNTrainState(train_state.TrainState):
+        target_params: jax.FrozenDict
+
     def init_state(self, key):
-        state = create_train_state(key, self.network, self.n_states, self.config)
+        params, tx = network_init(key, self.network, self.n_states, self.config)
+        state = self.DQNTrainState.create(apply_fn=self.network.apply, params=params, tx=tx,
+                                          target_params=params)
         return state
 
     def select_action(self, obs, agent_state, *args, **kwargs):
@@ -58,10 +65,14 @@ class DQNAgent(Agent):
     def update(self, agent_state, buffer, _, key):
         for _ in range(self.config.n_epochs):
             states, actions, rewards, next_states, dones = buffer.sample_batch(self.config.batch_size, key)
-            q_values_next = network_forward(agent_state, next_states)
+            q_values_next = agent_state.apply_fn(agent_state.target_params, next_states)
             targets = rewards + self.config.gamma * (1.0 - dones) * jnp.max(q_values_next, axis=-1)
 
             agent_state = train_step(agent_state, q_loss_fn, targets, states, actions)
+
+            new_target_params = optax.incremental_update(agent_state.params, agent_state.target_params,
+                                                         self.config.polyak_tau)
+            agent_state = agent_state.replace(target_params=new_target_params)
         return agent_state
 
 class PPOAgent(Agent):
@@ -70,7 +81,8 @@ class PPOAgent(Agent):
         self.network = CNN(self.n_actions + 1)
 
     def init_state(self, key):
-        state = create_train_state(key, self.network, self.n_states, self.config)
+        params, tx = network_init(key, self.network, self.n_states, self.config)
+        state = train_state.TrainState.create(apply_fn=self.network.apply, params=params, tx=tx)
         return state
 
     def select_action(self, obs, agent_state, key, **kwargs):
@@ -86,18 +98,9 @@ class PPOAgent(Agent):
         obs, actions, rewards, dones, log_probs, values = buffer.get()
         final_value = network_forward(agent_state, final_obs)[:, -1]
 
-        # all_values = jnp.concatenate((values.squeeze(), final_value[None, :]), axis=0)
-        # discounts = (1 - dones.squeeze()) * self.config.gamma
-        print(jnp.unique(actions, return_counts=True))
-
-        advantages = self.generalized_advantage_estimation(values, rewards,
-                                                           dones, final_value,
-                                                           self.config.gamma, self.config.gae_lambda).reshape(-1)
-        # batch_advantage_estimation = vmap(rlax.truncated_generalized_advantage_estimation,
-        #                                   in_axes=(1, 1, None, 1))
-        #
-        # advantages = batch_advantage_estimation(rewards, discounts, self.config.gae_lambda, all_values)
-
+        advantages = generalized_advantage_estimation(values, rewards, dones, final_value,
+                                                      self.config.gamma, self.config.gae_lambda)
+        advantages = advantages.reshape(-1)
         returns = advantages + values.reshape(-1)
         obs = jnp.reshape(obs, (-1, *obs.shape[2:]))
         actions = jnp.reshape(actions, -1)
@@ -113,20 +116,6 @@ class PPOAgent(Agent):
                                           self.config.clip_threshold, self.config.entorpy_weight,
                                           self.config.value_weight)
         return agent_state
-
-    @staticmethod
-    @jax.jit
-    def generalized_advantage_estimation(values, rewards, dones, term_value, discount_factor, lambda_):
-        def fold_left(last_gae, rest):
-            td_error, discount = rest
-            last_gae = td_error + discount * lambda_ * last_gae
-            return last_gae, last_gae
-
-        discounts = jnp.where(dones, 0, discount_factor)
-        td_errors = rewards + discounts * jnp.append(values[1:], jnp.expand_dims(term_value, 0), axis=0) - values
-
-        _, advantages = jax.lax.scan(fold_left, jnp.zeros(td_errors.shape[1]), (td_errors, discounts), reverse=True)
-        return advantages
 
 def make_agent(strategy, env, env_params, config, key):
     if strategy == 'dqn':

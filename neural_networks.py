@@ -13,8 +13,7 @@ class CNN(nn.Module):
         for _ in range(self.num_layers):
             x = nn.Conv(features=self.hidden_features,
                         kernel_size=(self.kernel_size, self.kernel_size),
-                        strides=(self.stride, self.stride),
-                        padding='VALID')(x)
+                        strides=(self.stride, self.stride))(x)
             x = nn.relu(x)
         x = x.reshape((x.shape[0], -1))
         x = nn.Dense(512)(x)
