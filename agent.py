@@ -89,11 +89,10 @@ class PPOAgent(Agent):
         # all_values = jnp.concatenate((values.squeeze(), final_value[None, :]), axis=0)
         # discounts = (1 - dones.squeeze()) * self.config.gamma
         print(jnp.unique(actions, return_counts=True))
-        print(dones)
+
         advantages = self.generalized_advantage_estimation(values, rewards,
                                                            dones, final_value,
                                                            self.config.gamma, self.config.gae_lambda).reshape(-1)
-
         # batch_advantage_estimation = vmap(rlax.truncated_generalized_advantage_estimation,
         #                                   in_axes=(1, 1, None, 1))
         #
@@ -109,11 +108,10 @@ class PPOAgent(Agent):
             for start_idx in range(0, epoch_size, self.config.batch_size):
                 end_idx = start_idx + self.config.batch_size
                 idxs = epoch_indices[start_idx:end_idx]
-                train_step(agent_state, ppo_loss_fn, (returns[idxs], advantages[idxs]),
-                           obs[idxs], actions[idxs], log_probs[idxs],
-                           self.config.clip_threshold, self.config.entorpy_weight,
-                           self.config.value_weight)
-
+                agent_state = train_step(agent_state, ppo_loss_fn, (returns[idxs], advantages[idxs]),
+                                         obs[idxs], actions[idxs], log_probs[idxs],
+                                          self.config.clip_threshold, self.config.entorpy_weight,
+                                          self.config.value_weight)
         return agent_state
 
     @staticmethod
