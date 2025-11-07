@@ -11,22 +11,27 @@ class ReplayBuffer:
     rewards: jnp.ndarray
     next_obs: jnp.ndarray
     dones: jnp.ndarray
+    priorities: jnp.ndarray
     ptr: int = 0
     size: int = 0
     max_size: int = 10000
+    omega: float = 0.6
 
     @classmethod
-    def create(cls, env, env_params, max_size=10000):
+    def create(cls, env, env_params, config):
         obs_shape = env.observation_space(env_params).shape
+        max_size = config.buffer_size
         buffer = ReplayBuffer(
             obs=jnp.zeros((max_size, *obs_shape), dtype=jnp.float32),
             actions=jnp.zeros((max_size,), dtype=jnp.int32),
             rewards=jnp.zeros((max_size,), dtype=jnp.float32),
             next_obs=jnp.zeros((max_size, *obs_shape), dtype=jnp.float32),
             dones=jnp.zeros((max_size,), dtype=jnp.float32),
+            priorities=jnp.zeros((max_size,), dtype=jnp.float32),
             ptr=0,
             size=0,
-            max_size=max_size
+            max_size=max_size,
+            omega=config.omega
         )
         return buffer
 
@@ -48,17 +53,23 @@ class ReplayBuffer:
             rewards=self.rewards.at[idxs].set(rewards),
             next_obs=self.next_obs.at[idxs].set(next_obs),
             dones=self.dones.at[idxs].set(dones),
+            priorities=self.priorities.at[idxs].set(jnp.ones_like(rewards)),
             ptr=end % self.max_size,
             size=jnp.minimum(self.size + batch_size, self.max_size),
-            max_size=self.max_size
+            max_size=self.max_size,
+            omega=self.omega
         )
         return buffer
 
     def sample_batch(self, batch_size, rng):
-        max_index = self.size
-        idxs = jax.random.randint(rng, (batch_size,), 0, max_index)
+        probs = self.priorities ** self.omega
+        probs = probs / probs.sum()
+        idxs = jax.random.choice(rng, len(probs), (batch_size,), p=probs)
 
-        return self.obs[idxs], self.actions[idxs], self.rewards[idxs], self.next_obs[idxs], self.dones[idxs]
+        return self.obs[idxs], self.actions[idxs], self.rewards[idxs], self.next_obs[idxs], self.dones[idxs], idxs
+
+    def update_priorities(self, idxs, priorities):
+        return self.replace(priorities=self.priorities.at[idxs].set(priorities))
 
 @struct.dataclass
 class RolloutBuffer:
@@ -100,9 +111,8 @@ class RolloutBuffer:
 
 def make_buffer(config, env, env_params):
     if config.strategy == 'dqn':
-        return ReplayBuffer.create(env, env_params, config.buffer_size)
+        return ReplayBuffer.create(env, env_params, config)
     elif config.strategy == 'ppo':
         return RolloutBuffer.create(env, env_params)
     else:
         raise NotImplementedError(f'{config.strategy} does not have a buffer')
-

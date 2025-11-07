@@ -50,7 +50,7 @@ class DQNAgent(Agent):
         self.network = CNN(self.n_actions)
 
     class DQNTrainState(train_state.TrainState):
-        target_params: jax.FrozenDict
+        target_params: FrozenDict
 
     def init_state(self, key):
         params, tx = network_init(key, self.network, self.n_states, self.config)
@@ -64,15 +64,20 @@ class DQNAgent(Agent):
 
     def update(self, agent_state, buffer, _, key):
         for _ in range(self.config.n_epochs):
-            states, actions, rewards, next_states, dones = buffer.sample_batch(self.config.batch_size, key)
+            states, actions, rewards, next_states, dones, idxs = buffer.sample_batch(self.config.batch_size, key)
             q_values_next = agent_state.apply_fn(agent_state.target_params, next_states)
             targets = rewards + self.config.gamma * (1.0 - dones) * jnp.max(q_values_next, axis=-1)
 
-            agent_state = train_step(agent_state, q_loss_fn, targets, states, actions)
+            agent_state, aux = train_step(agent_state, q_loss_fn, targets, states, actions)
 
+            # DDQN
             new_target_params = optax.incremental_update(agent_state.params, agent_state.target_params,
                                                          self.config.polyak_tau)
             agent_state = agent_state.replace(target_params=new_target_params)
+
+            # Priority replay
+            buffer.update_priorities(idxs, jnp.abs(aux['td_errors']))
+
         return agent_state
 
 class PPOAgent(Agent):
@@ -111,10 +116,10 @@ class PPOAgent(Agent):
             for start_idx in range(0, epoch_size, self.config.batch_size):
                 end_idx = start_idx + self.config.batch_size
                 idxs = epoch_indices[start_idx:end_idx]
-                agent_state = train_step(agent_state, ppo_loss_fn, (returns[idxs], advantages[idxs]),
-                                         obs[idxs], actions[idxs], log_probs[idxs],
-                                          self.config.clip_threshold, self.config.entorpy_weight,
-                                          self.config.value_weight)
+                agent_state, _ = train_step(agent_state, ppo_loss_fn, (returns[idxs], advantages[idxs]),
+                                            obs[idxs], actions[idxs], log_probs[idxs],
+                                            self.config.clip_threshold, self.config.entorpy_weight,
+                                            self.config.value_weight)
         return agent_state
 
 def make_agent(strategy, env, env_params, config, key):

@@ -15,8 +15,9 @@ import distrax
 def _q_loss_fn(params, apply_fn, targets, obs, actions):
     q_values = apply_fn(params, obs)
     q_selected = jnp.take_along_axis(q_values, actions[:, None], axis=-1).squeeze(-1)
-    loss = jnp.mean(optax.squared_error(q_selected, targets))
-    return loss
+    td_errors = optax.squared_error(q_selected, targets)
+    loss = jnp.mean(td_errors)
+    return loss, {'td_errors': td_errors}
 
 def _ppo_loss_fn(params, apply_fn, targets,
                  obs: jax.Array, actions, old_log_probs: jax.Array,
@@ -36,7 +37,7 @@ def _ppo_loss_fn(params, apply_fn, targets,
     value_loss = jnp.mean(optax.squared_error(new_values, returns))
     loss = policy_loss - regularization * entropy_loss + value_weight * value_loss
 
-    return loss
+    return loss, {}
 
 def generalized_advantage_estimation_(values, rewards, dones, term_value, discount_factor, lambda_):
     def fold_left(last_gae, rest):

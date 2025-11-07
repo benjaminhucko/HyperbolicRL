@@ -24,6 +24,7 @@ def get_config():
     # RAINBOW args
     parser.add_argument('--polyak-tau', type=float, default=5e-4)
     parser.add_argument('--buffer-size', type=int, default=10000)
+    parser.add_argument('--omega', type=float, default=0.6)
 
     # Convergence args
     parser.add_argument('--lr', type=float, default=1e-3)
