@@ -41,6 +41,10 @@ class ReplayBuffer:
         rewards = rewards.reshape(-1)
         next_obs = next_obs.reshape(-1, *next_obs.shape[2:])
         dones = dones.reshape(-1)
+        max_priority = jnp.max(self.priorities)
+        if max_priority == 0.0:
+            max_priority = 1.0
+        next_priorities = jnp.full_like(rewards, max_priority)
 
         batch_size = obs.shape[0]
         start = self.ptr
@@ -53,16 +57,17 @@ class ReplayBuffer:
             rewards=self.rewards.at[idxs].set(rewards),
             next_obs=self.next_obs.at[idxs].set(next_obs),
             dones=self.dones.at[idxs].set(dones),
-            priorities=self.priorities.at[idxs].set(jnp.ones_like(rewards)),
+            priorities=self.priorities.at[idxs].set(next_priorities),
             ptr=end % self.max_size,
             size=jnp.minimum(self.size + batch_size, self.max_size),
             max_size=self.max_size,
-            omega=self.omega
+            omega=self.omega,
         )
         return buffer
 
     def sample_batch(self, batch_size, rng):
-        probs = self.priorities ** self.omega
+        # probs = self.priorities ** self.omega
+        probs = jnp.ones(self.size)
         probs = probs / probs.sum()
         idxs = jax.random.choice(rng, len(probs), (batch_size,), p=probs)
 

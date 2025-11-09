@@ -70,7 +70,7 @@ class DQNAgent(Agent):
 
             agent_state, aux = train_step(agent_state, q_loss_fn, targets, states, actions)
 
-            # DDQN
+            # DDQN -> breaks convergence
             new_target_params = optax.incremental_update(agent_state.params, agent_state.target_params,
                                                          self.config.polyak_tau)
             agent_state = agent_state.replace(target_params=new_target_params)

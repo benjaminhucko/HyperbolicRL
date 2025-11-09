@@ -15,8 +15,8 @@ import distrax
 def _q_loss_fn(params, apply_fn, targets, obs, actions):
     q_values = apply_fn(params, obs)
     q_selected = jnp.take_along_axis(q_values, actions[:, None], axis=-1).squeeze(-1)
-    td_errors = optax.squared_error(q_selected, targets)
-    loss = jnp.mean(td_errors)
+    td_errors = targets - q_selected
+    loss = jnp.mean(optax.squared_error(td_errors))
     return loss, {'td_errors': td_errors}
 
 def _ppo_loss_fn(params, apply_fn, targets,
