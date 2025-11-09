@@ -1,6 +1,7 @@
 import gymnax
-from flax import struct
+from flax import struct, nnx
 import jax.numpy as jnp
+from gymnax.wrappers import gym
 from jax import vmap
 import jax
 
@@ -10,9 +11,9 @@ class EnvState:
     state: jax.Array
 
 class BatchEnv:
-    def __init__(self, env, config):
+    def __init__(self, env, num_envs):
         self.env = env
-        self.num_envs = config.num_envs
+        self.num_envs = num_envs
 
     def action_space(self, params):
         return self.env.action_space(params)
@@ -36,8 +37,37 @@ class BatchEnv:
 
     def reset(self, key, *args):
         batch_keys = self._batch_keys(key)
-        return vmap(self.env.reset, in_axes=(0, None))(batch_keys, *args)
+        obs = vmap(self.env.reset, in_axes=(0, None))(batch_keys, *args)
+        return obs
 
     def step(self, key, *args):
         batch_keys = self._batch_keys(key)
         return vmap(self.env.step, in_axes=(0, 0, 0, None))(batch_keys, *args)
+
+class XEnvironment(nnx.Module):
+    def __init__(self, env, env_params):
+        self.env = nnx.static(env)
+        self.env_params = nnx.static(env_params)
+        self.env_state = nnx.data(None)
+
+    def action_space(self):
+        return self.env.action_space(self.env_params)
+
+    def observation_space(self):
+        return self.env.observation_space(self.env_params)
+
+    def reset(self, key):
+        obs, state = self.env.reset(key, self.env_params)
+        self.env_state = nnx.data(state)
+        return obs
+
+    def step(self, action, key):
+        obs, state, reward, done, _ = self.env.step(key, self.env_state, action, self.env_params)
+        self.env_state = nnx.data(state)
+        return obs, reward, done
+
+
+def make_env(env_name, num_envs=1):
+    env, env_params = gymnax.make(env_name)
+    batch_env = BatchEnv(env, num_envs)
+    return XEnvironment(batch_env, env_params)

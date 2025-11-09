@@ -1,7 +1,5 @@
 import argparse
-
-
-def get_config():
+def parse_args():
     parser = argparse.ArgumentParser()
     # Setup args
     parser.add_argument('--seed', type=int, default=0)
@@ -27,8 +25,22 @@ def get_config():
     parser.add_argument('--omega', type=float, default=0.6)
 
     # Convergence args
-    parser.add_argument('--lr', type=float, default=1e-3)
+    parser.add_argument('--learning_rate', type=float, default=1e-3)
     parser.add_argument('--n-epochs', type=int, default=5)
     parser.add_argument('--batch-size', type=int, default=256)
+    parser.add_argument('--activation', type=str, default='relu')
+    ## CNN
+    parser.add_argument('--hidden-channels', type=int, default=16)
+    parser.add_argument('--kernel-size', type=int, default=3)
+    parser.add_argument('--stride', type=int, default=1)
+
+    ## MLP
+    parser.add_argument('--hidden-features', type=int, default=25)
+
 
     return parser.parse_args()
+
+def get_config():
+    config = parse_args()
+    config.sample_init = (config.strategy == 'dqn')
+    return config
