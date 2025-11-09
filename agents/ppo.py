@@ -9,9 +9,9 @@ from agents.agent import Agent
 from neural_networks import ActorCritic
 
 class PPOAgent(Agent):
-    def __init__(self, env, rngs, config):
-        super().__init__(env, rngs, config)
-        self.model = ActorCritic(self.n_states[-1], self.n_actions, rngs, config)
+    def __init__(self, obs_shape, n_actions, rngs, config):
+        super().__init__(obs_shape, n_actions, rngs, config)
+        self.model = ActorCritic(obs_shape[-1], n_actions, rngs, config)
         self.optimizer = nnx.Optimizer(self.model, optax.adam(learning_rate=self.config.learning_rate), wrt=nnx.Param)
 
     @staticmethod

@@ -37,8 +37,7 @@ class BatchEnv:
 
     def reset(self, key, *args):
         batch_keys = self._batch_keys(key)
-        obs = vmap(self.env.reset, in_axes=(0, None))(batch_keys, *args)
-        return obs
+        return vmap(self.env.reset, in_axes=(0, None))(batch_keys, *args)
 
     def step(self, key, *args):
         batch_keys = self._batch_keys(key)

@@ -7,7 +7,6 @@ from config import get_config
 from environment import make_env
 from logger import Logger
 
-import jax.numpy as jnp
 def run_episode_(agent, init_env, first_obs, n_steps: int, key):
     def run_step(state, keys):
         prev_obs, env = state
@@ -30,8 +29,9 @@ def sample_init_data(env, first_obs, rngs, config):
 def train_agent(env, config):
     logger = Logger(config)
     rngs = nnx.Rngs(config.seed)
-    agent = make_agent(config.strategy, env, rngs, config)
-    buffer = make_buffer(config, env)
+    obs_shape, n_actions = env.observation_space().shape, env.action_space().n
+    agent = make_agent(config.strategy, obs_shape, n_actions, rngs, config)
+    buffer = make_buffer(config, obs_shape)
     next_obs = env.reset(rngs())
     if config.sample_init:
         next_obs, data = sample_init_data(env, next_obs, rngs, config)

@@ -18,8 +18,7 @@ class ReplayBuffer:
     omega: float = 0.6
 
     @classmethod
-    def create(cls, env, config):
-        obs_shape = env.observation_space().shape
+    def create(cls, obs_shape, config):
         max_size = config.buffer_size
         buffer = ReplayBuffer(
             obs=jnp.zeros((max_size, *obs_shape), dtype=jnp.float32),
@@ -80,9 +79,7 @@ class RolloutBuffer:
     values: jnp.ndarray
 
     @classmethod
-    def create(cls, env, max_size=1):
-        obs_shape = env.observation_space().shape
-
+    def create(cls, obs_shape, max_size=1):
         buffer = RolloutBuffer(
             obs=jnp.empty((max_size, *obs_shape), dtype=jnp.float32),
             actions=jnp.zeros((max_size,), dtype=jnp.int32),
@@ -113,11 +110,11 @@ def store(storage, step: slice | int, **kwargs):
     return storage
 
 
-def make_buffer(config, env):
+def make_buffer(config, obs_shape):
     if config.strategy == 'dqn':
-        return ReplayBuffer.create(env, config)
+        return ReplayBuffer.create(obs_shape, config)
     elif config.strategy == 'ppo':
-        return RolloutBuffer.create(env)
+        return RolloutBuffer.create(obs_shape)
     else:
         raise NotImplementedError(f'{config.strategy} does not have a buffer')
 
