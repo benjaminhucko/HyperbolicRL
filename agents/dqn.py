@@ -6,14 +6,14 @@ import jax.numpy as jnp
 import jax
 
 from agents.agent import Agent
-from neural_networks import ActorCritic
+from neural_networks import ActorCritic, OldCNN
 
 
 class DQNAgent(Agent):
     def __init__(self, env, rngs, config):
         super().__init__(env, rngs, config)
-        self.model = ActorCritic(self.n_states[-1], self.n_actions, rngs, config)
-        self.target_model = ActorCritic(self.n_states[-1], self.n_actions, rngs, config)
+        self.model = OldCNN(self.n_states[-1], self.n_actions, rngs, config)
+        self.target_model = OldCNN(self.n_states[-1], self.n_actions, rngs, config)
         self.optimizer = nnx.Optimizer(self.model, optax.adam(learning_rate=self.config.learning_rate), wrt=nnx.Param)
 
     class DQNTrainState(train_state.TrainState):
@@ -21,9 +21,10 @@ class DQNAgent(Agent):
 
     @staticmethod
     def get_q_values(model, observations):
-        advantages, values = model(observations)
-        q_values = values + (advantages - advantages.mean())
-        return q_values
+        return model(observations)
+        # advantages, values = model(observations)
+        # q_values = values + (advantages - advantages.mean())
+        # return q_values
 
     def select_action(self, observations, *args, **kwargs):
         q_values = self.get_q_values(self.model, observations)
