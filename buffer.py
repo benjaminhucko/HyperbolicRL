@@ -72,7 +72,7 @@ class ReplayBuffer:
         actions = actions.reshape(-1)
 
         # n-step DQN
-        if self.n >0:
+        if self.n > 0:
             next_obs, rewards, discounts = self.n_step(next_obs, rewards, dones)
         else:
             discounts = jnp.where(dones, 0, self.gamma)

@@ -1,4 +1,5 @@
 import jax
+import jax.numpy as jnp
 from flax import nnx
 
 def activation_fn_factory(activation_name):
@@ -59,7 +60,7 @@ class ActorCritic(nnx.Module):
 
         return actor, critic
 
-class OldCNN(nnx.Module):
+class Critic(nnx.Module):
     output_features: int
     hidden_features: int = 64
     kernel_size: int = 3
@@ -79,3 +80,34 @@ class OldCNN(nnx.Module):
         x = nnx.relu(x)
         x = self.linear2(x)
         return x
+
+class NoisyLinear(nnx.Module):
+    def __init__(self, in_features, out_features, rngs, config):
+        self.in_features, self.out_features = in_features, out_features
+        # Mean and std parameters
+        self.mu_w = jax.random.uniform(rngs(), (out_features, in_features),
+            minval=-1.0 / jnp.sqrt(in_features),
+            maxval=1.0 / jnp.sqrt(in_features)
+        )
+        self.sigma_w = jnp.ones((out_features, in_features)) * (config.std_init / jnp.sqrt(in_features))
+        self.mu_b = jnp.zeros((out_features,))
+        self.sigma_b = jnp.ones((out_features,)) * (config.std_init / jnp.sqrt(out_features))
+
+    def f(self, x):
+        """Helper for factorized noise (Fortunato et al., 2017)"""
+        return jnp.sign(x) * jnp.sqrt(jnp.abs(x))
+
+    def sample_noise(self, key):
+        """Generate factorized Gaussian noise"""
+        key_in, key_out = jax.random.split(key)
+        eps_in = self.f(jax.random.normal(key_in, (self.in_features,)))
+        eps_out = self.f(jax.random.normal(key_out, (self.out_features,)))
+        noise_w = jnp.outer(eps_out, eps_in)
+        noise_b = eps_out
+        return noise_w, noise_b
+
+    def __call__(self, x, key):
+        noise_w, noise_b = self.sample_noise(key)
+        w = self.mu_w + self.sigma_w * noise_w
+        b = self.mu_b + self.sigma_b * noise_b
+        return x @ w.T + b

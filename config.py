@@ -20,11 +20,18 @@ def parse_args():
     parser.add_argument('--entorpy-weight', type=float, default=0.01)
 
     # RAINBOW args
-    parser.add_argument('--polyak-tau', type=float, default=5e-4)
-    parser.add_argument('--buffer-size', type=int, default=10000)
-    parser.add_argument('--omega', type=float, default=0.6)
-    parser.add_argument('--n-steps', type=int, default=4)
+    parser.add_argument('--duelling', action='store_true')
+    parser.add_argument('--priority', action='store_true')
+    parser.add_argument('--ddqn', action='store_true')
+    parser.add_argument('--noisy-nets', action='store_true')
+    parser.add_argument('--n-step', action='store_true')
+    parser.add_argument('--idk', action='store_true')
 
+    parser.add_argument('--polyak-tau', type=float, default=5e-4) # 1 -> turn off DDQN
+    parser.add_argument('--buffer-size', type=int, default=10000)
+    parser.add_argument('--omega', type=float, default=0.6) # 0 -> turn off priority
+    parser.add_argument('--n-steps', type=int, default=4) # 1 (0 while broken) -> turn off n-step
+    parser.add_argument('--std_init', type=float, default=0.5) # 0 -> turn off noisy nets
 
     # Convergence args
     parser.add_argument('--learning_rate', type=float, default=1e-3)
@@ -42,7 +49,23 @@ def parse_args():
 
     return parser.parse_args()
 
+def apply_rainbow_flags(config):
+    if config.strategy == 'rainbow':
+        config.strategy = 'dqn'
+        config.priority = True
+        config.duelling = True
+        config.ddqn = True
+        config.n_steps = True
+    if not config.priority:
+        config.omega = 0
+    if not config.ddqn:
+        config.polyak_tau = 1
+    if not config.n_steps:
+        config.n_steps = 0 #BUG
+
+
 def get_config():
     config = parse_args()
     config.sample_init = (config.strategy == 'dqn')
+
     return config

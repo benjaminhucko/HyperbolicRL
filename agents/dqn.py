@@ -8,11 +8,26 @@ import jax.numpy as jnp
 import jax
 
 from agents.agent import Agent
-from neural_networks import ActorCritic, OldCNN
+from neural_networks import ActorCritic, Critic
+
+
+
+
+def direct_q_values(model, observations):
+    q_values = model(observations)
+    return q_values
+
 
 class DQNPolicy(nnx.Module):
     def __init__(self, obs_shape, n_actions, rng, config):
         self.model = ActorCritic(obs_shape[-1], n_actions, rng, config)
+
+    @staticmethod
+    @nnx.jit
+    def q_values(model, observations):
+        advantages, values = model(observations)
+        q_values = values + (advantages - advantages.mean())
+        return q_values
 
     def __call__(self, observations, *args):
         advantages, values = self.model(observations)
@@ -23,13 +38,11 @@ class DQNPolicy(nnx.Module):
 class DQNAgent(Agent):
     def __init__(self, obs_shape, n_actions, rngs, config):
         super().__init__(obs_shape, n_actions, rngs, config)
+
         self.target_model = ActorCritic(obs_shape[-1], n_actions, rngs, config)
         self.policy = DQNPolicy(obs_shape, n_actions, rngs, config)
         nnx.update(self.target_model, nnx.state(self.policy.model))
         self.optimizer = nnx.Optimizer(self.policy.model, optax.adam(learning_rate=self.config.learning_rate), wrt=nnx.Param)
-
-    class DQNTrainState(train_state.TrainState):
-        target_params: FrozenDict
 
     @staticmethod
     @nnx.jit
