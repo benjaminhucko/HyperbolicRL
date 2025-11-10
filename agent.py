@@ -65,18 +65,22 @@ class DQNAgent(Agent):
     def update(self, agent_state, buffer, _, key):
         for _ in range(self.config.n_epochs):
             states, actions, rewards, next_states, dones, idxs = buffer.sample_batch(self.config.batch_size, key)
-            q_values_next = agent_state.apply_fn(agent_state.target_params, next_states)
-            targets = rewards + self.config.gamma * (1.0 - dones) * jnp.max(q_values_next, axis=-1)
+            q_values_next_target = agent_state.apply_fn(agent_state.target_params, next_states)
+            q_values_next_behavioural = agent_state.apply_fn(agent_state.params, next_states)
+
+            next_actions = jnp.argmax(q_values_next_behavioural, axis=-1)
+            q_values_next = jnp.take_along_axis(q_values_next_target, next_actions[:, None], axis=-1).squeeze()
+            targets = rewards + self.config.gamma * (1.0 - dones) * q_values_next
 
             agent_state, aux = train_step(agent_state, q_loss_fn, targets, states, actions)
 
-            # DDQN -> breaks convergence
-            new_target_params = optax.incremental_update(agent_state.params, agent_state.target_params,
-                                                         self.config.polyak_tau)
-            agent_state = agent_state.replace(target_params=new_target_params)
-
             # Priority replay
             buffer.update_priorities(idxs, jnp.abs(aux['td_errors']))
+
+        # DDQN -> breaks convergence
+        new_target_params = optax.incremental_update(agent_state.params, agent_state.target_params,
+                                                     self.config.polyak_tau)
+        agent_state = agent_state.replace(target_params=new_target_params)
 
         return agent_state
 
