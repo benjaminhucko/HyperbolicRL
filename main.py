@@ -3,16 +3,15 @@ from typing import Callable
 
 import gymnax
 import jax
-import jax.numpy as jnp
 from flax import nnx
-from jax import vmap
-from optax.schedules import piecewise_interpolate_schedule
 
 from agents.agent_factory import make_agent
-from buffer import ReplayBuffer, make_buffer
+from buffer import make_buffer
 from config import get_config
 from environment import EnvState, BatchEnv
 from logger import Logger
+
+from tqdm import tqdm
 
 
 @nnx.jit(static_argnames=['env', 'n_steps'])
@@ -60,13 +59,15 @@ def train_agent(env, env_params, config):
     #     buffer = buffer.add_data(*data)
 
     update_keys = jax.random.split(key, config.num_updates)
-    for update_idx in range(config.num_updates):
+    for update_idx in tqdm(range(config.num_updates)):
         episode_key, update_key = jax.random.split(update_keys[update_idx], 2)
         start_time = time.time()
         next_state, data = run_episode(episode_key, agent.policy, env, env_params,
                                        next_state, config.update_every)
         print(f'Episode {update_idx} finished in {time.time() - start_time} seconds')
+        start_time = time.time()
         buffer = buffer.add_data(*data)
+        print(f'data_added {update_idx} finished in {time.time() - start_time} seconds')
         agent.update(buffer, rngs)
         logger.log(data)
     return agent

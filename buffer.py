@@ -10,12 +10,14 @@ class ReplayBuffer:
     actions: jnp.ndarray
     rewards: jnp.ndarray
     next_obs: jnp.ndarray
-    dones: jnp.ndarray
+    discounts: jnp.ndarray
     priorities: jnp.ndarray
     ptr: int = 0
     size: int = 0
     max_size: int = 10000
+    gamma: float = 0.99
     omega: float = 0.6
+    n: int = 0
 
     @classmethod
     def create(cls, obs_shape, config):
@@ -25,37 +27,76 @@ class ReplayBuffer:
             actions=jnp.zeros((max_size,), dtype=jnp.int32),
             rewards=jnp.zeros((max_size,), dtype=jnp.float32),
             next_obs=jnp.zeros((max_size, *obs_shape), dtype=jnp.float32),
-            dones=jnp.zeros((max_size,), dtype=jnp.int32),
+            discounts=jnp.zeros((max_size,), dtype=jnp.float32),
             priorities=jnp.zeros((max_size,), dtype=jnp.float32),
             ptr=0,
             size=0,
             max_size=max_size,
-            omega=config.omega
+            gamma=config.gamma,
+            omega=config.omega,
+            n=config.n_steps,
         )
         return buffer
+
+    def n_step(self, next_obs, rewards, dones):
+        _, B = rewards.shape
+        queue_discounts = jnp.full((self.n, B), self.gamma) ** jnp.arange(self.n)[:, None]
+
+        def aggregation_fn(carry, state):
+            reward_queue, prev_m = carry
+            reward, done = state
+
+            m = jnp.where(done, 0, prev_m)
+            reward_queue = jnp.where(done, jnp.zeros_like(reward_queue), reward_queue)
+            next_m = jnp.maximum(m + 1, self.n)
+            n_step_rewards = jnp.sum(reward_queue * queue_discounts, axis=-1)
+            reward_queue = jnp.roll(reward_queue.at[-1, :].set(reward), 1, axis=0)
+            return (reward_queue, next_m), (n_step_rewards, m == self.n)
+
+        reward_queue_init = jnp.zeros((self.n, B), dtype=jnp.float32)
+        m_init = jnp.full(B, self.n)
+
+        _, (aggregated_rewards, dones) = jax.lax.scan(aggregation_fn, (reward_queue_init, m_init),
+                                                      (rewards, dones),
+                                                      reverse=True)
+        discounts = jnp.full_like(dones, self.gamma ** self.n)
+        trunc_discounts = self.gamma ** jnp.arange(self.n, 0, -1)
+        discounts.at[discounts.shape[0] - self.n:].set(trunc_discounts[:, None])
+        discounts = jnp.where(dones, 0, discounts)
+        next_obs = jnp.roll(next_obs, -self.n, axis=0).at[self.n:].set(next_obs[None, self.n])
+        return next_obs, rewards, discounts
+
 
     def add_data(self, obs, actions, rewards, next_obs, dones, _):
         obs = obs.reshape(-1, *obs.shape[2:])
         actions = actions.reshape(-1)
-        rewards = rewards.reshape(-1)
+
+        # n-step DQN
+        if self.n >0:
+            next_obs, rewards, discounts = self.n_step(next_obs, rewards, dones)
+        else:
+            discounts = jnp.where(dones, 0, self.gamma)
+
         next_obs = next_obs.reshape(-1, *next_obs.shape[2:])
-        dones = dones.reshape(-1)
+        rewards = rewards.reshape(-1)
+        discounts = discounts.reshape(-1)
+
+        max_priorities = jnp.max(self.priorities)
+        max_priorities = max_priorities if max_priorities > 0 else 1
 
         batch_size = obs.shape[0]
         start = self.ptr
         end = self.ptr + batch_size
         idxs = jnp.arange(start, end) % self.max_size
-        buffer = ReplayBuffer(
+        buffer = self.replace(
             obs=self.obs.at[idxs].set(obs),
             actions=self.actions.at[idxs].set(actions),
             rewards=self.rewards.at[idxs].set(rewards),
             next_obs=self.next_obs.at[idxs].set(next_obs),
-            dones=self.dones.at[idxs].set(dones),
-            priorities=self.priorities.at[idxs].set(jnp.ones_like(rewards)),
+            discounts=self.discounts.at[idxs].set(discounts),
+            priorities=self.priorities.at[idxs].set(jnp.full_like(rewards, max_priorities)),
             ptr=end % self.max_size,
             size=jnp.minimum(self.size + batch_size, self.max_size),
-            max_size=self.max_size,
-            omega=self.omega
         )
         return buffer
 
@@ -64,7 +105,7 @@ class ReplayBuffer:
         probs = probs / probs.sum()
         idxs = jax.random.choice(key, len(probs), (batch_size,), p=probs)
 
-        return self.obs[idxs], self.actions[idxs], self.rewards[idxs], self.next_obs[idxs], self.dones[idxs], idxs
+        return self.obs[idxs], self.actions[idxs], self.rewards[idxs], self.next_obs[idxs], self.discounts[idxs], idxs
 
     def update_priorities(self, idxs, priorities):
         return self.replace(priorities=self.priorities.at[idxs].set(priorities))

@@ -12,17 +12,18 @@ from neural_networks import ActorCritic, OldCNN
 
 class DQNPolicy(nnx.Module):
     def __init__(self, obs_shape, n_actions, rng, config):
-        self.model = OldCNN(obs_shape[-1], n_actions, rng, config)
+        self.model = ActorCritic(obs_shape[-1], n_actions, rng, config)
 
-    def __call__(self, obs, *args):
-        q_values = self.model(obs)
+    def __call__(self, observations, *args):
+        advantages, values = self.model(observations)
+        q_values = values + (advantages - advantages.mean())
         action = jnp.argmax(q_values, axis=-1)
         return action, {}
 
 class DQNAgent(Agent):
     def __init__(self, obs_shape, n_actions, rngs, config):
         super().__init__(obs_shape, n_actions, rngs, config)
-        self.target_model = OldCNN(obs_shape[-1], n_actions, rngs, config)
+        self.target_model = ActorCritic(obs_shape[-1], n_actions, rngs, config)
         self.policy = DQNPolicy(obs_shape, n_actions, rngs, config)
         nnx.update(self.target_model, nnx.state(self.policy.model))
         self.optimizer = nnx.Optimizer(self.policy.model, optax.adam(learning_rate=self.config.learning_rate), wrt=nnx.Param)
@@ -31,11 +32,11 @@ class DQNAgent(Agent):
         target_params: FrozenDict
 
     @staticmethod
+    @nnx.jit
     def get_q_values(model, observations):
-        return model(observations)
-        # advantages, values = model(observations)
-        # q_values = values + (advantages - advantages.mean())
-        # return q_values
+        advantages, values = model(observations)
+        q_values = values + (advantages - advantages.mean())
+        return q_values
 
     @staticmethod
     @nnx.jit
@@ -54,16 +55,22 @@ class DQNAgent(Agent):
     def update(self, buffer, rngs):
         # batches_per_epoch = buffer.size // self.config.batch_size
         for _ in range(self.config.n_epochs):
-            states, actions, rewards, next_states, dones, idxs = buffer.sample_batch(self.config.batch_size, rngs())
+            states, actions, rewards, next_states, discounts, idxs = buffer.sample_batch(self.config.batch_size, rngs())
 
-            q_values_next = nnx.jit(self.get_q_values)(self.policy.model, next_states)
-            targets = rewards + self.config.gamma * (1.0 - dones) * jnp.max(q_values_next, axis=-1)
+            q_values_behaviour = self.get_q_values(self.policy.model, next_states)
+            target_actions = jnp.argmax(q_values_behaviour, axis=-1)
+
+            q_values_target = self.get_q_values(self.target_model, next_states)
+            q_values_next = jnp.take_along_axis(q_values_target, target_actions[:, None], axis=-1).squeeze(-1)
+
+            targets = rewards + discounts * q_values_next
 
             td_errors = self.train_step(self.policy.model, self.optimizer, targets, states, actions)
-            # DDQN
-            # new_target_params = optax.incremental_update(nnx.state(self.model), nnx.state(self.target_model),
-            #                                              self.config.polyak_tau)
-            # nnx.update(self.target_model, new_target_params)
 
             # Priority replay
             buffer.update_priorities(idxs, jnp.abs(td_errors))
+
+            # DDQN
+            new_target_params = optax.incremental_update(nnx.state(self.policy.model), nnx.state(self.target_model),
+                                                         self.config.polyak_tau)
+            nnx.update(self.target_model, new_target_params)

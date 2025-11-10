@@ -23,6 +23,8 @@ def parse_args():
     parser.add_argument('--polyak-tau', type=float, default=5e-4)
     parser.add_argument('--buffer-size', type=int, default=10000)
     parser.add_argument('--omega', type=float, default=0.6)
+    parser.add_argument('--n-steps', type=int, default=4)
+
 
     # Convergence args
     parser.add_argument('--learning_rate', type=float, default=1e-3)
@@ -35,7 +37,7 @@ def parse_args():
     parser.add_argument('--stride', type=int, default=1)
 
     ## MLP
-    parser.add_argument('--hidden-features', type=int, default=25)
+    parser.add_argument('--hidden-features', type=int, default=256)
 
 
     return parser.parse_args()
