@@ -1,3 +1,5 @@
+import time
+
 import gymnax
 import jax
 import jax.numpy as jnp
@@ -12,11 +14,12 @@ from environment import EnvState, BatchEnv
 from logger import Logger
 
 
-def run_episode_(key, agent, env, env_params, env_state: EnvState, n_steps: int):
+@nnx.jit(static_argnames=['env', 'n_steps'])
+def run_episode(key, policy: nnx.Module, env, env_params, env_state: EnvState, n_steps: int):
     keys = jax.random.split(key, n_steps)
     def run_step(last_env_state: EnvState, key):
         agent_key, env_key, reset_key = jax.random.split(key, 3)
-        action, aux = agent.select_action(last_env_state.obs, key=agent_key)
+        action, aux = policy(last_env_state.obs, agent_key)
         obs, env_hidden, reward, dones, _ = env.step(env_key, last_env_state.state, action, env_params)
 
         obs, env_hidden = env.reset_done(dones, key, env_params, obs, env_hidden)
@@ -25,8 +28,6 @@ def run_episode_(key, agent, env, env_params, env_state: EnvState, n_steps: int)
 
     end_state, data = jax.lax.scan(run_step, env_state, keys)
     return end_state, data
-
-run_episode = nnx.jit(run_episode_, static_argnames=['env', 'n_steps'])
 
 def sample_init_data(burn_in_key, env, env_params, env_init_state: EnvState, config):
     obs_shape, n_actions = env.observation_space(env_params).shape, env.action_space(env_params).n
@@ -43,7 +44,7 @@ def train_agent(env, env_params, config):
     key, agent_init_key, env_init_key, burn_in_key = jax.random.split(key, 4)
 
     obs_shape, n_actions = env.observation_space(env_params).shape, env.action_space(env_params).n
-    print(obs_shape, n_actions)
+
     rngs = nnx.Rngs(config.seed)
     agent = make_agent(config.strategy, obs_shape, n_actions, rngs, config)
     buffer = make_buffer(config, obs_shape)
@@ -52,15 +53,17 @@ def train_agent(env, env_params, config):
     obs, env_state = env.reset(env_init_key, env_params)
     next_state = EnvState(obs=obs, state=env_state)
 
-    if config.strategy == 'dqn':
-        next_state, data = sample_init_data(burn_in_key, env, env_params, next_state, config)
-        buffer = buffer.add_data(*data)
+    # if config.strategy == 'dqn':
+    #     next_state, data = sample_init_data(burn_in_key, env, env_params, next_state, config)
+    #     buffer = buffer.add_data(*data)
 
     update_keys = jax.random.split(key, config.num_updates)
     for update_idx in range(config.num_updates):
         episode_key, update_key = jax.random.split(update_keys[update_idx], 2)
-        next_state, data = run_episode(episode_key, agent, env, env_params,
+        start_time = time.time()
+        next_state, data = run_episode(episode_key, agent.policy, env, env_params,
                                        next_state, config.update_every)
+        print(f'Episode {update_idx} finished in {time.time() - start_time} seconds')
         buffer = buffer.add_data(*data)
         agent.update(buffer, rngs)
         logger.log(data)

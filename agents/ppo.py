@@ -8,11 +8,25 @@ from flax import nnx
 from agents.agent import Agent
 from neural_networks import ActorCritic
 
+class PPOPolicy(nnx.Module):
+    def __init__(self, obs_shape, n_actions, rngs, config):
+        self.model = ActorCritic(obs_shape[-1], n_actions, rngs, config)
+
+    def __call__(self, obs, key):
+        result = self.model(obs)
+        action_logits = result[:, :-1]
+        policy = distrax.Categorical(logits=action_logits)
+        action = policy.sample(seed=key)
+        log_probs = policy.log_prob(action).squeeze()
+
+        return action, {'log_probs': log_probs, 'values': result[:, -1]}
+
+
 class PPOAgent(Agent):
     def __init__(self, obs_shape, n_actions, rngs, config):
         super().__init__(obs_shape, n_actions, rngs, config)
-        self.model = ActorCritic(obs_shape[-1], n_actions, rngs, config)
-        self.optimizer = nnx.Optimizer(self.model, optax.adam(learning_rate=self.config.learning_rate), wrt=nnx.Param)
+        self.policy = PPOPolicy(obs_shape, n_actions, rngs, config)
+        self.optimizer = nnx.Optimizer(self.policy.model, optax.adam(learning_rate=self.config.learning_rate), wrt=nnx.Param)
 
     @staticmethod
     @nnx.jit
@@ -50,15 +64,6 @@ class PPOAgent(Agent):
         grads = nnx.grad(ppo_loss)(model)
         optimizer.update(model, grads)  # in-place updates
         return {}
-
-    def select_action(self, obs, key, **kwargs):
-        result = self.model(obs)
-        action_logits = result[:, :-1]
-        policy = distrax.Categorical(logits=action_logits)
-        action = policy.sample(seed=key)
-        log_probs = policy.log_prob(action).squeeze()
-
-        return action, {'log_probs': log_probs, 'values': result[:, -1]}
 
     def update(self, buffer, key):
         obs, actions, rewards, dones, log_probs, values, final_obs = buffer.get()
