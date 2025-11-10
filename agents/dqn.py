@@ -1,3 +1,5 @@
+import time
+
 import optax
 from flax import nnx
 from flax.training import train_state
@@ -13,7 +15,11 @@ class DQNAgent(Agent):
     def __init__(self, obs_shape, n_actions, rngs, config):
         super().__init__(obs_shape, n_actions, rngs, config)
         self.model = OldCNN(obs_shape[-1], n_actions, rngs, config)
-        self.target_model = OldCNN(obs_shape[-1], n_actions, rngs, config)
+        # self.target_model = OldCNN(obs_shape[-1], n_actions, rngs, config)
+
+        # nnx.update(self.target_model, nnx.state(self.model))
+        self.times = []
+
         self.optimizer = nnx.Optimizer(self.model, optax.adam(learning_rate=self.config.learning_rate), wrt=nnx.Param)
 
     class DQNTrainState(train_state.TrainState):
@@ -38,8 +44,8 @@ class DQNAgent(Agent):
         def loss_fn(model):
             q_values = DQNAgent.get_q_values(model, states)
             q_selected = jnp.take_along_axis(q_values, actions[:, None], axis=-1).squeeze(-1)
-            td_errors = optax.squared_error(q_selected, targets)
-            loss = jnp.mean(td_errors)
+            td_errors = q_selected - targets
+            loss = jnp.mean(optax.squared_error(td_errors))
             return loss, {'td_errors': td_errors}
 
         grads, aux = nnx.grad(loss_fn, has_aux=True)(model)
@@ -51,15 +57,20 @@ class DQNAgent(Agent):
         for _ in range(self.config.n_epochs):
             states, actions, rewards, next_states, dones, idxs = buffer.sample_batch(self.config.batch_size, rngs())
 
-            q_values_next = nnx.jit(self.get_q_values)(self.target_model, next_states)
+            q_values_next = nnx.jit(self.get_q_values)(self.model, next_states)
             targets = rewards + self.config.gamma * (1.0 - dones) * jnp.max(q_values_next, axis=-1)
 
+            start_time = time.time()
             td_errors = self.train_step(self.model, self.optimizer, targets, states, actions)
-
+            end_time = time.time() - start_time
+            self.times.append(end_time)
+            if len(self.times) > 10:
+                print(sum(self.times))
+                self.times.clear()
             # DDQN
-            new_target_params = optax.incremental_update(nnx.state(self.model), nnx.state(self.target_model),
-                                                         self.config.polyak_tau)
-            nnx.update(self.target_model, new_target_params)
+            # new_target_params = optax.incremental_update(nnx.state(self.model), nnx.state(self.target_model),
+            #                                              self.config.polyak_tau)
+            # nnx.update(self.target_model, new_target_params)
 
             # Priority replay
             buffer.update_priorities(idxs, jnp.abs(td_errors))
