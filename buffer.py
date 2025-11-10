@@ -40,37 +40,37 @@ class ReplayBuffer:
 
     def n_step(self, next_obs, rewards, dones):
         _, B = rewards.shape
-        queue_discounts = jnp.full((self.n, B), self.gamma) ** jnp.arange(self.n)[:, None]
-
         def aggregation_fn(carry, state):
             reward_queue, prev_m = carry
             reward, done = state
 
             m = jnp.where(done, 0, prev_m)
+            next_m = jnp.minimum(m + 1, self.n)
+
             reward_queue = jnp.where(done, jnp.zeros_like(reward_queue), reward_queue)
-            next_m = jnp.maximum(m + 1, self.n)
-            n_step_rewards = jnp.sum(reward_queue * queue_discounts, axis=-1)
-            reward_queue = jnp.roll(reward_queue.at[-1, :].set(reward), 1, axis=0)
-            return (reward_queue, next_m), (n_step_rewards, m == self.n)
+            reward_queue = jnp.roll(reward_queue, 1, axis=0).at[0, :].set(reward)
+            n_step_rewards = jnp.sum(reward_queue, axis=0)
+            next_reward_queue = reward_queue * self.gamma
+
+            return (next_reward_queue, next_m), (n_step_rewards, m != self.n)
 
         reward_queue_init = jnp.zeros((self.n, B), dtype=jnp.float32)
         m_init = jnp.full(B, self.n)
-
-        _, (aggregated_rewards, dones) = jax.lax.scan(aggregation_fn, (reward_queue_init, m_init),
-                                                      (rewards, dones),
-                                                      reverse=True)
-        discounts = jnp.full_like(dones, self.gamma ** self.n)
+        _, (rewards, dones) = jax.lax.scan(aggregation_fn, (reward_queue_init, m_init),
+                                                  (rewards, dones), reverse=True)
+        discounts = jnp.full_like(rewards, self.gamma ** self.n)
         trunc_discounts = self.gamma ** jnp.arange(self.n, 0, -1)
         discounts.at[discounts.shape[0] - self.n:].set(trunc_discounts[:, None])
         discounts = jnp.where(dones, 0, discounts)
-        next_obs = jnp.roll(next_obs, -self.n, axis=0).at[self.n:].set(next_obs[None, self.n])
-        return next_obs, rewards, discounts
+        next_obs_n = self.n - 1
+        next_obs = jnp.roll(next_obs, -next_obs_n, axis=0)
+        next_obs = next_obs.at[next_obs.shape[0] - next_obs_n:].set(next_obs[None, :])
 
+        return next_obs, rewards, discounts
 
     def add_data(self, obs, actions, rewards, next_obs, dones, *args):
         obs = obs.reshape(-1, *obs.shape[2:])
         actions = actions.reshape(-1)
-
         # n-step DQN
         if self.n > 0:
             next_obs, rewards, discounts = self.n_step(next_obs, rewards, dones)
