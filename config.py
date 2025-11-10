@@ -52,10 +52,10 @@ def parse_args():
 def apply_rainbow_flags(config):
     if config.strategy == 'rainbow':
         config.strategy = 'dqn'
-        config.priority = True
-        config.duelling = True
-        config.ddqn = True
-        config.n_steps = True
+        config.priority = True # works
+        config.duelling = True # works
+        config.ddqn = True # works
+        config.n_steps = True # works
     if not config.priority:
         config.omega = 0
     if not config.ddqn:

@@ -69,7 +69,6 @@ class PPOAgent(Agent):
 
     def update(self, buffer, rng):
         obs, actions, rewards, dones, log_probs, values, final_obs = buffer.get()
-        print(final_obs.shape)
         _, final_value = self.policy.model(final_obs)
         final_value = final_value.squeeze()
 

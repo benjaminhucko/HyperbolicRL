@@ -111,3 +111,10 @@ class NoisyLinear(nnx.Module):
         w = self.mu_w + self.sigma_w * noise_w
         b = self.mu_b + self.sigma_b * noise_b
         return x @ w.T + b
+
+
+def get_network_class(config):
+    if config.duelling:
+        return ActorCritic
+    else:
+        return Critic
