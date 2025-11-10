@@ -38,6 +38,8 @@ def parse_args():
     parser.add_argument('--n-epochs', type=int, default=5)
     parser.add_argument('--batch-size', type=int, default=256)
     parser.add_argument('--activation', type=str, default='relu')
+    parser.add_argument('--epsilon', type=float, default=0.2)
+
     ## CNN
     parser.add_argument('--hidden-channels', type=int, default=64)
     parser.add_argument('--kernel-size', type=int, default=3)
@@ -45,8 +47,6 @@ def parse_args():
 
     ## MLP
     parser.add_argument('--hidden-features', type=int, default=256)
-
-
     return parser.parse_args()
 
 def apply_rainbow_flags(config):
@@ -56,16 +56,20 @@ def apply_rainbow_flags(config):
         config.duelling = True # works
         config.ddqn = True # works
         config.n_steps = True # works
+        config.noisy_nets = True # works
     if not config.priority:
         config.omega = 0
     if not config.ddqn:
         config.polyak_tau = 1
     if not config.n_td:
-        config.n_steps = 0 #BUG
-
+        config.n_steps = 0
+    if config.noisy_nets:
+        config.epsilon = 0
+    return config
 
 def get_config():
     config = parse_args()
+    config = apply_rainbow_flags(config)
     config.sample_init = (config.strategy == 'dqn')
 
     return config

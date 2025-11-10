@@ -1,3 +1,5 @@
+from functools import partial
+
 import jax
 import jax.numpy as jnp
 from flax import nnx
@@ -34,29 +36,37 @@ class CNN(nnx.Module):
 class MLP(nnx.Module):
     def __init__(self, in_channels, out_channels, rngs, config):
         self.activation_fn = activation_fn_factory(config.activation)
-        self.input_layer = nnx.Linear(in_channels, config.hidden_channels, rngs=rngs)
-        self.output_layer = nnx.Linear(config.hidden_channels, out_channels, rngs=rngs)
+        linear_layer_cls = get_linear_class(config)
+        self.input_layer = linear_layer_cls(in_channels, config.hidden_channels, rngs=rngs)
+        self.output_layer = linear_layer_cls(config.hidden_channels, out_channels, rngs=rngs)
 
-    def __call__(self, x):
-        x = self.input_layer(x)
-        x = self.activation_fn(x)
-        x = self.output_layer(x)
+    def __call__(self, x, key):
+        if key is not None:
+            key1, key2 = jax.random.split(key, 2)
+            x = self.input_layer(x, key1)
+            x = self.activation_fn(x)
+            x = self.output_layer(x, key2)
+        else:
+            x = self.input_layer(x)
+            x = self.activation_fn(x)
+            x = self.output_layer(x)
         return x
 
 class ActorCritic(nnx.Module):
     def __init__(self, in_channels, n_actions, rngs, config):
         super().__init__()
         self.feature_extractor = CNN(in_channels, config.hidden_channels, rngs, config)
+
         self.activation_fn = activation_fn_factory(config.activation)
         self.actor = MLP(config.hidden_channels * 100, n_actions, rngs, config)
         self.critic = MLP(config.hidden_channels * 100, 1, rngs, config)
 
-    def __call__(self, x):
+    def __call__(self, x, key):
         features = self.feature_extractor(x)
         features = features.reshape(features.shape[0], -1)
         features = self.activation_fn(features)
-        actor = self.actor(features)
-        critic = self.critic(features)
+        actor = self.actor(features, key)
+        critic = self.critic(features, key)
 
         return actor, critic
 
@@ -69,16 +79,14 @@ class Critic(nnx.Module):
 
     def __init__(self, in_channels, n_actions, rngs, config):
         self.feature_extractor = CNN(in_channels, config.hidden_channels, rngs, config)
-        self.linear1 = nnx.Linear(config.hidden_channels * 100, 512, rngs=rngs)
-        self.linear2 = nnx.Linear(512, n_actions, rngs=rngs)
+        self.activation_fn = activation_fn_factory(config.activation)
+        self.mlp = MLP(config.hidden_channels * 100, n_actions, rngs, config)
 
-    def __call__(self, x):
+    def __call__(self, x, key=None):
         x = self.feature_extractor(x)
-        x = nnx.relu(x)
+        x = self.activation_fn(x)
         x = x.reshape((x.shape[0], -1))
-        x = self.linear1(x)
-        x = nnx.relu(x)
-        x = self.linear2(x)
+        x = self.mlp(x, key)
         return x
 
 class NoisyLinear(nnx.Module):
@@ -94,11 +102,9 @@ class NoisyLinear(nnx.Module):
         self.sigma_b = jnp.ones((out_features,)) * (config.std_init / jnp.sqrt(out_features))
 
     def f(self, x):
-        """Helper for factorized noise (Fortunato et al., 2017)"""
         return jnp.sign(x) * jnp.sqrt(jnp.abs(x))
 
     def sample_noise(self, key):
-        """Generate factorized Gaussian noise"""
         key_in, key_out = jax.random.split(key)
         eps_in = self.f(jax.random.normal(key_in, (self.in_features,)))
         eps_out = self.f(jax.random.normal(key_out, (self.out_features,)))
@@ -118,3 +124,9 @@ def get_network_class(config):
         return ActorCritic
     else:
         return Critic
+
+def get_linear_class(config):
+    if config.noisy_nets:
+        return partial(NoisyLinear, config=config)
+    else:
+        return nnx.Linear
