@@ -54,9 +54,9 @@ def train_agent(env, env_params, config):
     obs, env_state = env.reset(env_init_key, env_params)
     next_state = EnvState(obs=obs, state=env_state)
 
-    # if config.strategy == 'dqn':
-    #     next_state, data = sample_init_data(burn_in_key, env, env_params, next_state, config)
-    #     buffer = buffer.add_data(*data)
+    if config.strategy == 'dqn':
+        next_state, data = sample_init_data(burn_in_key, env, env_params, next_state, config)
+        buffer = buffer.add_data(*data, next_state.obs)
 
     update_keys = jax.random.split(key, config.num_updates)
     for update_idx in tqdm(range(config.num_updates)):
@@ -66,7 +66,7 @@ def train_agent(env, env_params, config):
                                        next_state, config.update_every)
         print(f'Episode {update_idx} finished in {time.time() - start_time} seconds')
         start_time = time.time()
-        buffer = buffer.add_data(*data)
+        buffer = buffer.add_data(*data, next_state.obs)
         print(f'data_added {update_idx} finished in {time.time() - start_time} seconds')
         agent.update(buffer, rngs)
         logger.log(data)

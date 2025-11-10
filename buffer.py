@@ -67,7 +67,7 @@ class ReplayBuffer:
         return next_obs, rewards, discounts
 
 
-    def add_data(self, obs, actions, rewards, next_obs, dones, _):
+    def add_data(self, obs, actions, rewards, next_obs, dones, *args):
         obs = obs.reshape(-1, *obs.shape[2:])
         actions = actions.reshape(-1)
 
@@ -118,6 +118,7 @@ class RolloutBuffer:
     dones: jnp.ndarray
     log_probs: jnp.ndarray
     values: jnp.ndarray
+    final_obs: jnp.ndarray
 
     @classmethod
     def create(cls, obs_shape, max_size=1):
@@ -128,10 +129,11 @@ class RolloutBuffer:
             dones=jnp.zeros((max_size,), dtype=jnp.float32),
             log_probs=jnp.zeros((max_size, ), dtype=jnp.float32),
             values=jnp.zeros((max_size,), dtype=jnp.float32),
+            final_obs=jnp.zeros((max_size,), dtype=jnp.float32),
         )
         return buffer
 
-    def add_data(self, obs, actions, rewards, _, dones, policy_aux):
+    def add_data(self, obs, actions, rewards, _, dones, policy_aux, final_obs):
         buffer = RolloutBuffer(
             obs=obs,
             actions=actions,
@@ -139,11 +141,12 @@ class RolloutBuffer:
             dones=dones,
             log_probs=policy_aux['log_probs'],
             values=policy_aux['values'],
+            final_obs=final_obs,
         )
         return buffer
 
     def get(self):
-        return self.obs, self.actions, self.rewards, self.dones, self.log_probs, self.values
+        return self.obs, self.actions, self.rewards, self.dones, self.log_probs, self.values, self.final_obs
 
 def store(storage, step: slice | int, **kwargs):
     replace = {key: getattr(storage, key).at[step].set(value) for key, value in kwargs.items()}

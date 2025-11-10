@@ -1,3 +1,5 @@
+from typing import final
+
 import distrax
 import jax
 import optax
@@ -13,13 +15,12 @@ class PPOPolicy(nnx.Module):
         self.model = ActorCritic(obs_shape[-1], n_actions, rngs, config)
 
     def __call__(self, obs, key):
-        result = self.model(obs)
-        action_logits = result[:, :-1]
+        action_logits, values = self.model(obs)
         policy = distrax.Categorical(logits=action_logits)
         action = policy.sample(seed=key)
         log_probs = policy.log_prob(action).squeeze()
 
-        return action, {'log_probs': log_probs, 'values': result[:, -1]}
+        return action, {'log_probs': log_probs, 'values': values.squeeze()}
 
 
 class PPOAgent(Agent):
@@ -37,6 +38,7 @@ class PPOAgent(Agent):
             return last_gae, last_gae
 
         discounts = jnp.where(dones, 0, discount_factor)
+
         td_errors = rewards + discounts * jnp.append(values[1:], jnp.expand_dims(term_value, 0), axis=0) - values
 
         _, advantages = jax.lax.scan(fold_left, jnp.zeros(td_errors.shape[1]), (td_errors, discounts), reverse=True)
@@ -56,7 +58,7 @@ class PPOAgent(Agent):
 
             policy_loss = rlax.clipped_surrogate_pg_loss(ratio, advantages, clip_threshold)
             entropy_loss = jnp.mean(policy.entropy())
-            value_loss = jnp.mean(optax.squared_error(values, returns))
+            value_loss = jnp.mean(optax.squared_error(values.squeeze(), returns))
 
             loss = policy_loss - regularization * entropy_loss + value_weight * value_loss
             return loss
@@ -65,12 +67,18 @@ class PPOAgent(Agent):
         optimizer.update(model, grads)  # in-place updates
         return {}
 
-    def update(self, buffer, key):
+    def update(self, buffer, rng):
         obs, actions, rewards, dones, log_probs, values, final_obs = buffer.get()
-        _, final_value = self.model(final_obs)
+        print(final_obs.shape)
+        _, final_value = self.policy.model(final_obs)
+        final_value = final_value.squeeze()
 
-        advantages = self.generalized_advantage_estimation(values, rewards, dones, final_value, self.config.gamma,
-                                                           self.config.gae_lambda)
+        # discounts = jnp.where(dones, 0, self.config.gamma)
+        # adv_fn_rlax = jax.vmap(rlax.truncated_generalized_advantage_estimation, in_axes=(1, 1, None, 1), out_axes=1)
+        # advantages = adv_fn_rlax(rewards, discounts, self.config.gae_lambda,
+        #                          jnp.concatenate((values, jnp.expand_dims(final_value, 0)), 0))
+        advantages = self.generalized_advantage_estimation(values, rewards, dones, final_value,
+                                                           self.config.gamma, self.config.gae_lambda)
         advantages = advantages.reshape(-1)
         returns = advantages + values.reshape(-1)
         obs = jnp.reshape(obs, (-1, *obs.shape[2:]))
@@ -78,11 +86,11 @@ class PPOAgent(Agent):
         log_probs = jnp.reshape(log_probs, -1)
         epoch_size = obs.shape[0]
         for _ in range(self.config.n_epochs):
-            epoch_indices = jax.random.permutation(key, epoch_size, independent=True)
+            epoch_indices = jax.random.permutation(rng(), epoch_size, independent=True)
             for start_idx in range(0, epoch_size, self.config.batch_size):
                 end_idx = start_idx + self.config.batch_size
                 idxs = epoch_indices[start_idx:end_idx]
-                self.train_step(self.model, self.optimizer, returns[idxs], advantages[idxs],
+                self.train_step(self.policy.model, self.optimizer, returns[idxs], advantages[idxs],
                                 obs[idxs], actions[idxs], log_probs[idxs],
                                 self.config.clip_threshold, self.config.entorpy_weight,
                                 self.config.value_weight)

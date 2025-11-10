@@ -49,7 +49,7 @@ class ActorCritic(nnx.Module):
         self.feature_extractor = CNN(in_channels, config.hidden_channels, rngs, config)
         self.activation_fn = activation_fn_factory(config.activation)
         self.actor = MLP(config.hidden_channels * 100, n_actions, rngs, config)
-        self.critic = MLP(config.hidden_channels * 100, n_actions, rngs, config)
+        self.critic = MLP(config.hidden_channels * 100, 1, rngs, config)
 
     def __call__(self, x):
         features = self.feature_extractor(x)
