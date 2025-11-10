@@ -1,4 +1,5 @@
 import time
+from typing import Callable
 
 import gymnax
 import jax
@@ -15,7 +16,7 @@ from logger import Logger
 
 
 @nnx.jit(static_argnames=['env', 'n_steps'])
-def run_episode(key, policy: nnx.Module, env, env_params, env_state: EnvState, n_steps: int):
+def run_episode(key, policy: Callable, env, env_params, env_state: EnvState, n_steps: int):
     keys = jax.random.split(key, n_steps)
     def run_step(last_env_state: EnvState, key):
         agent_key, env_key, reset_key = jax.random.split(key, 3)
@@ -30,9 +31,10 @@ def run_episode(key, policy: nnx.Module, env, env_params, env_state: EnvState, n
     return end_state, data
 
 def sample_init_data(burn_in_key, env, env_params, env_init_state: EnvState, config):
-    obs_shape, n_actions = env.observation_space(env_params).shape, env.action_space(env_params).n
-    random_agent = make_agent('random', obs_shape, n_actions, None, config)
-    next_state, data = run_episode(burn_in_key, random_agent, env, env_params,
+    n_actions = env.action_space(env_params).n
+    random_policy = lambda obs, key: (jax.random.randint(key, shape=obs.shape[0], minval=0, maxval=n_actions), {})
+    random_policy = nnx.static(random_policy)
+    next_state, data = run_episode(burn_in_key, random_policy, env, env_params,
                                    env_state=env_init_state,
                                    n_steps=config.update_after)
     return next_state, data

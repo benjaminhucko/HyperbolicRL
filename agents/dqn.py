@@ -24,7 +24,7 @@ class DQNAgent(Agent):
         super().__init__(obs_shape, n_actions, rngs, config)
         self.target_model = OldCNN(obs_shape[-1], n_actions, rngs, config)
         self.policy = DQNPolicy(obs_shape, n_actions, rngs, config)
-        nnx.update(self.target_model, nnx.state(self.model))
+        nnx.update(self.target_model, nnx.state(self.policy.model))
         self.optimizer = nnx.Optimizer(self.policy.model, optax.adam(learning_rate=self.config.learning_rate), wrt=nnx.Param)
 
     class DQNTrainState(train_state.TrainState):
