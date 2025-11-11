@@ -54,12 +54,12 @@ class MLP(nnx.Module):
 
 class ActorCritic(nnx.Module):
     def __init__(self, in_channels, n_actions, rngs, config):
-        super().__init__()
+        self.atoms = config.atoms
         self.feature_extractor = CNN(in_channels, config.hidden_channels, rngs, config)
 
         self.activation_fn = activation_fn_factory(config.activation)
-        self.actor = MLP(config.hidden_channels * 100, n_actions, rngs, config)
-        self.critic = MLP(config.hidden_channels * 100, 1, rngs, config)
+        self.actor = MLP(config.hidden_channels * 100, n_actions * self.atoms, rngs, config)
+        self.critic = MLP(config.hidden_channels * 100, self.atoms, rngs, config)
 
     def __call__(self, x, key):
         features = self.feature_extractor(x)
@@ -71,16 +71,12 @@ class ActorCritic(nnx.Module):
         return actor, critic
 
 class Critic(nnx.Module):
-    output_features: int
-    hidden_features: int = 64
-    kernel_size: int = 3
-    stride: int = 1
-    num_layers: int = 3
-
     def __init__(self, in_channels, n_actions, rngs, config):
+        self.atoms = config.atoms
+
         self.feature_extractor = CNN(in_channels, config.hidden_channels, rngs, config)
         self.activation_fn = activation_fn_factory(config.activation)
-        self.mlp = MLP(config.hidden_channels * 100, n_actions, rngs, config)
+        self.mlp = MLP(config.hidden_channels * 100, n_actions * self.atoms, rngs, config)
 
     def __call__(self, x, key=None):
         x = self.feature_extractor(x)

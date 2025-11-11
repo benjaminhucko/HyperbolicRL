@@ -31,9 +31,7 @@ def run_episode(key, policy: Callable, env, env_params, env_state: EnvState, n_s
 
 def sample_init_data(burn_in_key, env, env_params, env_init_state: EnvState, config):
     n_actions = env.action_space(env_params).n
-    class RandomPolicy(nnx.Module):
-        def __call__(self, obs, key):
-            return jax.random.randint(key, shape=obs.shape[0], minval=0, maxval=n_actions), {}
+
     next_state, data = run_episode(burn_in_key, RandomPolicy(), env, env_params,
                                    env_state=env_init_state,
                                    n_steps=config.update_after)

@@ -25,13 +25,18 @@ def parse_args():
     parser.add_argument('--ddqn', action='store_true')
     parser.add_argument('--noisy-nets', action='store_true')
     parser.add_argument('--n-td', action='store_true')
-    parser.add_argument('--idk', action='store_true')
+    parser.add_argument('--distributional', action='store_true')
 
-    parser.add_argument('--polyak-tau', type=float, default=5e-4) # 1 -> turn off DDQN
     parser.add_argument('--buffer-size', type=int, default=10000)
-    parser.add_argument('--omega', type=float, default=0.6) # 0 -> turn off priority
-    parser.add_argument('--n-steps', type=int, default=1) # 1 (0 while broken) -> turn off n-step
-    parser.add_argument('--std_init', type=float, default=0.5) # 0 -> turn off noisy nets
+    parser.add_argument('--polyak-tau', type=float, default=5e-4) # DDQN
+    parser.add_argument('--omega', type=float, default=0.6) # priority
+    parser.add_argument('--n-steps', type=int, default=1) # n_step td
+    parser.add_argument('--std_init', type=float, default=0.5) # noisy nets init
+    parser.add_argument('--atoms', type=int, default=10)
+    parser.add_argument('--v-min', type=float, default=0.0)
+    parser.add_argument('--v-max', type=float, default=5.0)
+
+
 
     # Convergence args
     parser.add_argument('--learning_rate', type=float, default=1e-3)
@@ -57,6 +62,7 @@ def apply_rainbow_flags(config):
         config.ddqn = True # works
         config.n_steps = True # works
         config.noisy_nets = True # works
+        config.distributional = True # implementing
     if not config.priority:
         config.omega = 0
     if not config.ddqn:
@@ -65,6 +71,8 @@ def apply_rainbow_flags(config):
         config.n_steps = 0
     if config.noisy_nets:
         config.epsilon = 0
+    if not config.distributional:
+        config.atoms = 1
     return config
 
 def get_config():
