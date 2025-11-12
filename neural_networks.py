@@ -37,20 +37,27 @@ class MLP(nnx.Module):
     def __init__(self, in_channels, out_channels, rngs, config):
         self.activation_fn = activation_fn_factory(config.activation)
         linear_layer_cls = get_linear_class(config)
+        self.noisy = config.noisy_nets
         self.input_layer = linear_layer_cls(in_channels, config.hidden_channels, rngs=rngs)
         self.output_layer = linear_layer_cls(config.hidden_channels, out_channels, rngs=rngs)
+        self.forward = nnx.static(self.noisy_forward if config.noisy_nets else self.normal_forward)
+
+    def noisy_forward(self, x, key):
+        key1, key2 = jax.random.split(key, 2)
+        x = self.input_layer(x, key1)
+        x = self.activation_fn(x)
+        x = self.output_layer(x, key2)
+        return x
+
+    def normal_forward(self, x, *args):
+        x = self.input_layer(x)
+        x = self.activation_fn(x)
+        x = self.output_layer(x)
+        return x
 
     def __call__(self, x, key):
-        if key is not None:
-            key1, key2 = jax.random.split(key, 2)
-            x = self.input_layer(x, key1)
-            x = self.activation_fn(x)
-            x = self.output_layer(x, key2)
-        else:
-            x = self.input_layer(x)
-            x = self.activation_fn(x)
-            x = self.output_layer(x)
-        return x
+        return self.forward(x, key)
+
 
 class ActorCritic(nnx.Module):
     def __init__(self, in_channels, n_actions, rngs, config):
@@ -78,7 +85,7 @@ class Critic(nnx.Module):
         self.activation_fn = activation_fn_factory(config.activation)
         self.mlp = MLP(config.hidden_channels * 100, n_actions * self.atoms, rngs, config)
 
-    def __call__(self, x, key=None):
+    def __call__(self, x, key):
         x = self.feature_extractor(x)
         x = self.activation_fn(x)
         x = x.reshape((x.shape[0], -1))

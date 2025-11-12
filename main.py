@@ -6,6 +6,7 @@ import jax
 from flax import nnx
 
 from agents.agent_factory import make_agent
+from agents.random_policy import RandomPolicy
 from buffer import make_buffer
 from config import get_config
 from environment import EnvState, BatchEnv
@@ -32,7 +33,7 @@ def run_episode(key, policy: Callable, env, env_params, env_state: EnvState, n_s
 def sample_init_data(burn_in_key, env, env_params, env_init_state: EnvState, config):
     n_actions = env.action_space(env_params).n
 
-    next_state, data = run_episode(burn_in_key, RandomPolicy(), env, env_params,
+    next_state, data = run_episode(burn_in_key, RandomPolicy(n_actions), env, env_params,
                                    env_state=env_init_state,
                                    n_steps=config.update_after)
     return next_state, data
