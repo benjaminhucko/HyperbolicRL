@@ -62,7 +62,7 @@ def train_agent(env, env_params, config):
     for update_idx in tqdm(range(config.num_updates)):
         episode_key, update_key = jax.random.split(update_keys[update_idx], 2)
         start_time = time.time()
-        next_state, data = run_episode(episode_key, agent.policy, env, env_params,
+        next_state, data = run_episode(episode_key, agent.behavioral_policy(), env, env_params,
                                        next_state, config.update_every)
         print(f'Episode {update_idx} finished in {time.time() - start_time} seconds')
         start_time = time.time()

@@ -1,10 +1,18 @@
 from functools import partial
 
 import distrax
+import jax
 import jax.numpy as jnp
 import optax
 from flax import nnx
+from jax import vmap
 
+
+def select_actions(values, actions):
+    greedy_values = jnp.take_along_axis(values,
+                                        jnp.expand_dims(actions, axis=tuple(range(1, values.ndim))),
+                                        axis=1).squeeze()
+    return greedy_values
 
 def project_distribution(supports, weights, target_support):
     """Projects a batch of (support, weights) onto target_support.
@@ -68,22 +76,22 @@ def duelling_model_post(out):
     post_out = values + (advantages - advantages.mean())
     return post_out
 
-def direct_dist_model_post(out, atoms):
+def duelling_dist_model_post(out, atoms):
     values, advantages = out
     advantages = advantages.reshape((advantages.shape[0], atoms, -1))
-    q_values = values + (advantages - advantages.mean(axis=1, keepdims=True))
+    q_values = values + (advantages - advantages.mean(axis=-1, keepdims=True))
     post_out = nnx.softmax(q_values, axis=-1)
     return post_out
 
-def duelling_dist_model_post(out, atoms):
+def direct_dist_model_post(out, atoms):
     q_values = out
-    q_values = q_values.reshape((q_values.shape[0], atoms, -1))
-    post_out = nnx.softmax(q_values, axis=-1)
+    q_values = q_values.reshape((q_values.shape[0], -1, atoms))
+    post_out = nnx.softmax(q_values, axis=1)
     return post_out
 
 def get_loss(model, observations, actions, targets, key, model_output_fn, loss_fn):
     actual = model_output_fn(model, observations, key)
-    selected_actual = jnp.take_along_axis(actual, actions[:, None], axis=-1).squeeze(-1)
+    selected_actual = select_actions(actual, actions)
     loss, errors = loss_fn(selected_actual, targets)
     return loss, {'errors': errors}
 
@@ -111,7 +119,7 @@ def make_output_fn(config):
 def make_q_value_fn(config, support):
     model_post_out = make_output_fn(config)
     if config.distributional:
-        q_fn = partial(jnp.dot, a=support)
+        q_fn = partial(jnp.dot, b=support)
     else:
         q_fn = nnx.identity
     return partial(get_q_values, model_out_fn=model_post_out, q_fn=q_fn)
@@ -125,9 +133,10 @@ def make_loss_fn(config):
     return partial(get_loss, model_output_fn=model_output_fn, loss_fn=loss_fn)
 
 def distributional_targets_fn(rewards, discounts, target_prob_distribution, support):
-    target_support = rewards + discounts * support
-    target_support = target_support.clamp(min=support[0], max=support[-1])
-    targets = project_distribution(target_support, target_prob_distribution, support)
+    target_support = rewards[:, None] + jnp.outer(discounts, support)
+    target_support = target_support.clip(min=support[0], max=support[-1])
+    batched_project_fn = vmap(project_distribution, in_axes=(0, 0, None))
+    targets = batched_project_fn(target_support, target_prob_distribution, support)
     return targets
 
 def classic_targets_fn(rewards, discounts, greedy_targets):

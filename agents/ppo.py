@@ -94,3 +94,5 @@ class PPOAgent(Agent):
                                 self.config.clip_threshold, self.config.entorpy_weight,
                                 self.config.value_weight)
 
+    def behavioral_policy(self):
+        return self.policy

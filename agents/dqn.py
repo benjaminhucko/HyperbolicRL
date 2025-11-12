@@ -7,7 +7,8 @@ from flax import nnx
 
 from agents.agent import Agent
 from agents.dqn_needs_refactor import project_distribution, duelling_model_post, direct_model_post, categorical_loss_fn, \
-    q_loss_fn, make_q_value_fn, make_output_fn, make_loss_fn, make_targets_fn
+    q_loss_fn, make_q_value_fn, make_output_fn, make_loss_fn, make_targets_fn, select_actions
+from agents.random_policy import EpsilonGreedyPolicy
 from neural_networks import get_network_class
 
 class DQNPolicy(nnx.Module):
@@ -23,11 +24,12 @@ class DQNPolicy(nnx.Module):
 class DQNAgent(Agent):
     def __init__(self, obs_shape, n_actions, rngs, config):
         super().__init__(obs_shape, n_actions, rngs, config)
+        self.n_actions = n_actions
         self.support = jnp.linspace(config.v_min, config.v_max, config.atoms)
         self.policy = DQNPolicy(obs_shape, n_actions, rngs, config, support=self.support)
 
         self.model_out = nnx.jit(make_output_fn(config))
-        self.loss_fn = nnx.jit(make_loss_fn(config))
+        self.loss_fn = make_loss_fn(config)
         self.targets_fn = nnx.jit(make_targets_fn(config, self.support))
 
         if config.ddqn:
@@ -52,7 +54,7 @@ class DQNAgent(Agent):
 
             next_actions, _ = self.policy(next_states, rngs())
             next_values = self.model_out(self.policy.model, next_states, rngs())
-            greedy_values = jnp.take_along_axis(next_values, next_actions[:, None], axis=-1).squeeze(-1)
+            greedy_values = select_actions(next_values, actions)
             targets = self.targets_fn(rewards, discounts, greedy_values)
 
             errors = self.train_step(self.policy.model, self.optimizer, targets, states, actions, rngs(), self.loss_fn)
@@ -63,3 +65,9 @@ class DQNAgent(Agent):
             new_target_params = optax.incremental_update(nnx.state(self.policy.model), nnx.state(self.target_model),
                                                          self.config.polyak_tau)
             nnx.update(self.target_model, new_target_params)
+
+    def behavioral_policy(self):
+        if self.config.duelling:
+            return self.policy
+        else:
+            return EpsilonGreedyPolicy(self.policy, self.n_actions, self.config.epsilon)

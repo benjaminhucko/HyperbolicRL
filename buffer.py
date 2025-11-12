@@ -63,8 +63,8 @@ class ReplayBuffer:
         discounts.at[discounts.shape[0] - self.n:].set(trunc_discounts[:, None])
         discounts = jnp.where(dones, 0, discounts)
         next_obs_n = self.n - 1
-        next_obs = jnp.roll(next_obs, -next_obs_n, axis=0)
-        next_obs = next_obs.at[next_obs.shape[0] - next_obs_n:].set(next_obs[None, :])
+        shifted_obs = jnp.roll(next_obs, -next_obs_n, axis=0)
+        next_obs = shifted_obs.at[next_obs.shape[0] - next_obs_n:].set(next_obs[None, -1])
 
         return next_obs, rewards, discounts
 
