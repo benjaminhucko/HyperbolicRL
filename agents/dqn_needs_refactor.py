@@ -126,9 +126,6 @@ def distributional_targets_fn(rewards, discounts, target_prob_distribution, supp
     target_support = jnp.clip(target_support, v_min, v_max)
     batched_project_fn = vmap(project_distribution, in_axes=(0, 0, None))
     targets = batched_project_fn(target_support, target_prob_distribution, support)
-    # jax.debug.print('targets: {target_expectation}, projected: {projected_expectation}',
-    #                 target_expectation=jnp.mean(target_support * target_prob_distribution),
-    #                 projected_expectation=jnp.mean(targets * support[None, :]))
     return targets
 
 def classic_targets_fn(rewards, discounts, greedy_targets):
