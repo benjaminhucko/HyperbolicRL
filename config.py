@@ -32,9 +32,9 @@ def parse_args():
     parser.add_argument('--omega', type=float, default=0.6) # priority
     parser.add_argument('--n-steps', type=int, default=4) # n_step td
     parser.add_argument('--std-init', type=float, default=0.1) # noisy nets init
-    parser.add_argument('--atoms', type=int, default=10)
+    parser.add_argument('--atoms', type=int, default=51)
     parser.add_argument('--v-min', type=float, default=0.0)
-    parser.add_argument('--v-max', type=float, default=5.0)
+    parser.add_argument('--v-max', type=float, default=50.0)
 
     # Convergence args
     parser.add_argument('--learning_rate', type=float, default=1e-3)

@@ -1,3 +1,4 @@
+import jax
 import jax.numpy as jnp
 import optax
 from flax import nnx
@@ -49,12 +50,12 @@ class DQNAgent(Agent):
         for _ in range(self.config.n_epochs):
             states, actions, rewards, next_states, discounts, idxs = buffer.sample_batch(self.config.batch_size, rngs())
             next_actions, _ = self.policy(next_states, rngs())
-            next_values = self.model_out(self.policy.model, next_states, rngs())
+            next_values = self.model_out(self.target_model, next_states, rngs())
             greedy_values = select_actions(next_values, next_actions)
             targets = self.targets_fn(rewards, discounts, greedy_values)
 
             errors = self.train_step(self.policy.model, self.optimizer, targets, states, actions, rngs(), self.loss_fn)
-            print(jnp.mean(errors))
+
             # Priority replay
             buffer.update_priorities(idxs, errors)
 
