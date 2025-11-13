@@ -39,8 +39,6 @@ def project_distribution(projected_from, weights, projected_to):
     distance = jnp.abs(projected_from[:, None] - projected_to[None, :])
     contribution = jnp.clip(1 - distance / delta_z, 0.0, 1.0)
     projected = jnp.sum(contribution * weights[:, None], axis=0)
-    # jax.debug.print('weights {w}, contributions {c}, projected {p}', w=weights, c=contribution, p=projected)
-    # print(projected.shape, contribution.shape, weights.shape)
     projected /= jnp.sum(projected)
     return projected
 
@@ -58,14 +56,14 @@ def direct_model_post(out):
     return out
 
 def duelling_model_post(out):
-    values, advantages = out
+    advantages, values = out
     post_out = values + (advantages - advantages.mean())
     return post_out
 
 def duelling_dist_model_post(out, atoms, logits):
-    values, advantages = out
+    advantages, values = out
     advantages = advantages.reshape((advantages.shape[0], -1, atoms))
-    post_out = values + (advantages - advantages.mean(axis=-1, keepdims=True))
+    post_out = values[:, None] + (advantages - advantages.mean(axis=-1, keepdims=True))
     if not logits:
         post_out = nnx.softmax(post_out, axis=-1)
     return post_out
