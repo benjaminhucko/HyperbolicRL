@@ -39,7 +39,7 @@ class ReplayBuffer:
         return buffer
 
     def n_step(self, next_obs, rewards, dones):
-        _, B = rewards.shape
+        T, B = rewards.shape
         def aggregation_fn(carry, state):
             reward_queue, prev_m = carry
             reward, done = state
@@ -64,7 +64,7 @@ class ReplayBuffer:
         discounts = jnp.where(dones, 0, discounts)
         next_obs_n = self.n - 1
         shifted_obs = jnp.roll(next_obs, -next_obs_n, axis=0)
-        next_obs = shifted_obs.at[next_obs.shape[0] - next_obs_n:].set(next_obs[None, -1])
+        next_obs = shifted_obs.at[T - next_obs_n:].set(next_obs[None, -1])
 
         return next_obs, rewards, discounts
 

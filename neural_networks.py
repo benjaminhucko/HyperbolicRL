@@ -55,7 +55,7 @@ class MLP(nnx.Module):
         x = self.output_layer(x)
         return x
 
-    def __call__(self, x, key):
+    def __call__(self, x, key=None):
         return self.forward(x, key)
 
 
@@ -68,7 +68,7 @@ class ActorCritic(nnx.Module):
         self.actor = MLP(config.hidden_channels * 100, n_actions * self.atoms, rngs, config)
         self.critic = MLP(config.hidden_channels * 100, self.atoms, rngs, config)
 
-    def __call__(self, x, key):
+    def __call__(self, x, key=None):
         features = self.feature_extractor(x)
         features = features.reshape(features.shape[0], -1)
         features = self.activation_fn(features)
@@ -85,7 +85,7 @@ class Critic(nnx.Module):
         self.activation_fn = activation_fn_factory(config.activation)
         self.mlp = MLP(config.hidden_channels * 100, n_actions * self.atoms, rngs, config)
 
-    def __call__(self, x, key):
+    def __call__(self, x, key=None):
         x = self.feature_extractor(x)
         x = self.activation_fn(x)
         x = x.reshape((x.shape[0], -1))

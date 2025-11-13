@@ -68,7 +68,10 @@ def train_agent(env, env_params, config):
         start_time = time.time()
         buffer = buffer.add_data(*data, next_state.obs)
         print(f'data_added {update_idx} finished in {time.time() - start_time} seconds')
+        start_time = time.time()
         agent.update(buffer, rngs)
+        print(f'agent updated {update_idx} finished in {time.time() - start_time} seconds')
+
         logger.log(data)
     return agent
 

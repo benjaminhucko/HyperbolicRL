@@ -8,10 +8,6 @@ class Agent(ABC, nnx.Module):
         self.n_actions = nnx.static(n_actions)
         self.config = nnx.static(config)
 
-    # @abstractmethod
-    # def select_action(self, obs, key):
-    #     pass
-
     @abstractmethod
     def update(self, buffer, key):
         pass

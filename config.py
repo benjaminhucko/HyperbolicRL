@@ -24,7 +24,7 @@ def parse_args():
     parser.add_argument('--priority', action='store_true')
     parser.add_argument('--ddqn', action='store_true')
     parser.add_argument('--noisy-nets', action='store_true') # not converging
-    parser.add_argument('--n-td', action='store_true') # not converging
+    parser.add_argument('--n-td', action='store_true')
     parser.add_argument('--distributional', action='store_true') # not converging
 
     parser.add_argument('--buffer-size', type=int, default=10000)
@@ -58,7 +58,7 @@ def apply_rainbow_flags(config):
         config.priority = True # works
         config.duelling = True # works
         config.ddqn = True # works
-        config.n_steps = True # works
+        config.n_td = True # works
         config.noisy_nets = True # works
         config.distributional = True # implementing
     if not config.priority:

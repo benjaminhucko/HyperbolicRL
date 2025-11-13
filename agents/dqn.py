@@ -1,15 +1,12 @@
-import distrax
-import jax
 import jax.numpy as jnp
 import optax
-import rlax
 from flax import nnx
 
 from agents.agent import Agent
-from agents.dqn_needs_refactor import project_distribution, duelling_model_post, direct_model_post, categorical_loss_fn, \
-    q_loss_fn, make_q_value_fn, make_output_fn, make_loss_fn, make_targets_fn, select_actions
+from agents.dqn_needs_refactor import make_q_value_fn, make_output_fn, make_loss_fn, make_targets_fn, select_actions
 from agents.random_policy import EpsilonGreedyPolicy
 from neural_networks import get_network_class
+
 
 class DQNPolicy(nnx.Module):
     def __init__(self, obs_shape, n_actions, rng, config, support):
@@ -51,10 +48,9 @@ class DQNAgent(Agent):
         # batches_per_epoch = buffer.size // self.config.batch_size
         for _ in range(self.config.n_epochs):
             states, actions, rewards, next_states, discounts, idxs = buffer.sample_batch(self.config.batch_size, rngs())
-
             next_actions, _ = self.policy(next_states, rngs())
             next_values = self.model_out(self.policy.model, next_states, rngs())
-            greedy_values = select_actions(next_values, actions)
+            greedy_values = select_actions(next_values, next_actions)
             targets = self.targets_fn(rewards, discounts, greedy_values)
 
             errors = self.train_step(self.policy.model, self.optimizer, targets, states, actions, rngs(), self.loss_fn)
@@ -67,7 +63,7 @@ class DQNAgent(Agent):
             nnx.update(self.target_model, new_target_params)
 
     def behavioral_policy(self):
-        if self.config.duelling:
+        if self.config.noisy_nets:
             return self.policy
         else:
             return EpsilonGreedyPolicy(self.policy, self.n_actions, self.config.epsilon)
