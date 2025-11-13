@@ -54,6 +54,7 @@ class DQNAgent(Agent):
             targets = self.targets_fn(rewards, discounts, greedy_values)
 
             errors = self.train_step(self.policy.model, self.optimizer, targets, states, actions, rngs(), self.loss_fn)
+            print(jnp.mean(errors))
             # Priority replay
             buffer.update_priorities(idxs, errors)
 

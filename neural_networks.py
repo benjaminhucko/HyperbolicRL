@@ -95,14 +95,14 @@ class Critic(nnx.Module):
 class NoisyLinear(nnx.Module):
     def __init__(self, in_features, out_features, rngs, config):
         self.in_features, self.out_features = in_features, out_features
-        # Mean and std parameters
-        self.mu_w = jax.random.uniform(rngs(), (out_features, in_features),
+        key_mu = rngs.params()
+        self.w_mu = nnx.Param(jax.random.uniform(key_mu, (in_features, out_features),
             minval=-1.0 / jnp.sqrt(in_features),
             maxval=1.0 / jnp.sqrt(in_features)
-        )
-        self.sigma_w = jnp.ones((out_features, in_features)) * (config.std_init / jnp.sqrt(in_features))
-        self.mu_b = jnp.zeros((out_features,))
-        self.sigma_b = jnp.ones((out_features,)) * (config.std_init / jnp.sqrt(out_features))
+        ))
+        self.w_sigma = nnx.Param(jnp.ones((in_features, out_features)) * (config.std_init / jnp.sqrt(in_features)))
+        self.b_mu = nnx.Param(jnp.zeros((out_features,)))
+        self.b_sigma = nnx.Param(jnp.ones((out_features,)) * (config.std_init / jnp.sqrt(out_features)))
 
     def f(self, x):
         return jnp.sign(x) * jnp.sqrt(jnp.abs(x))
@@ -111,15 +111,15 @@ class NoisyLinear(nnx.Module):
         key_in, key_out = jax.random.split(key)
         eps_in = self.f(jax.random.normal(key_in, (self.in_features,)))
         eps_out = self.f(jax.random.normal(key_out, (self.out_features,)))
-        noise_w = jnp.outer(eps_out, eps_in)
+        noise_w = jnp.outer(eps_in, eps_out)
         noise_b = eps_out
         return noise_w, noise_b
 
     def __call__(self, x, key):
         noise_w, noise_b = self.sample_noise(key)
-        w = self.mu_w + self.sigma_w * noise_w
-        b = self.mu_b + self.sigma_b * noise_b
-        return x @ w.T + b
+        w = self.w_mu + self.w_sigma * noise_w
+        b = self.b_mu + self.b_sigma * noise_b
+        return x @ w + b
 
 
 def get_network_class(config):

@@ -31,7 +31,7 @@ def parse_args():
     parser.add_argument('--polyak-tau', type=float, default=5e-3) # DDQN
     parser.add_argument('--omega', type=float, default=0.6) # priority
     parser.add_argument('--n-steps', type=int, default=4) # n_step td
-    parser.add_argument('--std_init', type=float, default=0.5) # noisy nets init
+    parser.add_argument('--std-init', type=float, default=0.1) # noisy nets init
     parser.add_argument('--atoms', type=int, default=10)
     parser.add_argument('--v-min', type=float, default=0.0)
     parser.add_argument('--v-max', type=float, default=5.0)
