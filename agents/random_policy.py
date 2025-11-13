@@ -22,7 +22,6 @@ class EpsilonGreedyPolicy(nnx.Module):
         action = jnp.where(p < self.epsilon,
                            self.random_policy(obs, key2)[0],
                            self.greedy_policy(obs, key3)[0])
-        print(p < self.epsilon, action)
 
         return action, {}
 

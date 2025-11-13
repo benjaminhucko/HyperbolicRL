@@ -9,7 +9,7 @@ from agents.agent_factory import make_agent
 from agents.random_policy import RandomPolicy
 from buffer import make_buffer
 from config import get_config
-from environment import EnvState, BatchEnv
+from environment import EnvState, BatchEnv, visualize_performance
 from logger import Logger
 
 from tqdm import tqdm
@@ -38,31 +38,25 @@ def sample_init_data(burn_in_key, env, env_params, env_init_state: EnvState, con
                                    n_steps=config.update_after)
     return next_state, data
 
-def train_agent(env, env_params, config):
+def train_agent(env, env_params, config, rngs):
     logger = Logger(config)
-
-    key = jax.random.PRNGKey(config.seed)
-    key, agent_init_key, env_init_key, burn_in_key = jax.random.split(key, 4)
 
     obs_shape, n_actions = env.observation_space(env_params).shape, env.action_space(env_params).n
 
-    rngs = nnx.Rngs(config.seed)
     agent = make_agent(config.strategy, obs_shape, n_actions, rngs, config)
     buffer = make_buffer(config, obs_shape)
 
     env = BatchEnv(env, config.num_envs)
-    obs, env_state = env.reset(env_init_key, env_params)
+    obs, env_state = env.reset(rngs(), env_params)
     next_state = EnvState(obs=obs, state=env_state)
 
     if config.strategy == 'dqn':
-        next_state, data = sample_init_data(burn_in_key, env, env_params, next_state, config)
+        next_state, data = sample_init_data(rngs(), env, env_params, next_state, config)
         buffer = buffer.add_data(*data, next_state.obs)
 
-    update_keys = jax.random.split(key, config.num_updates)
     for update_idx in tqdm(range(config.num_updates)):
-        episode_key, update_key = jax.random.split(update_keys[update_idx], 2)
         start_time = time.time()
-        next_state, data = run_episode(episode_key, agent.behavioral_policy(), env, env_params,
+        next_state, data = run_episode(rngs(), agent.behavioral_policy(), env, env_params,
                                        next_state, config.update_every)
         print(f'Episode {update_idx} finished in {time.time() - start_time} seconds')
         start_time = time.time()
@@ -78,7 +72,9 @@ def train_agent(env, env_params, config):
 def main():
     config = get_config()
     env, env_params = gymnax.make(config.env_name)
-    agent = train_agent(env, env_params, config)
+    rngs = nnx.Rngs(config.seed)
+    agent = train_agent(env, env_params, config, rngs)
+    visualize_performance(env, env_params, agent.policy, rngs())
 
 if __name__ == '__main__':
     main()
