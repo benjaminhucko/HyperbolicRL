@@ -1,5 +1,6 @@
 import time
 
+from jax import vmap
 from tensorboardX import SummaryWriter
 import jax.numpy as jnp
 
@@ -28,30 +29,21 @@ class Logger:
     def log(self, data):
         self.step += 1
         logged_data = {key: [] for key in self.logged_keys}
+        print(data[2].shape, data[4].shape)
+        rewards = data[2].T
+        dones = data[4].T
         for env_idx in range(self.config.num_envs):
-            rewards = data[2][env_idx]
-            dones = data[4][env_idx]
+            dones_indices = jnp.where(dones[env_idx])[0]
+            episode_rewards = jnp.split(rewards[env_idx], dones_indices)
 
-            cached_episode_length = self.cached_episode_length[env_idx]
-            cached_episode_return = self.cached_episode_return[env_idx]
-            if not dones.any():
-                continue
+            env_lengths = [len(rewards) for rewards in episode_rewards]
+            env_lengths[0] += self.cached_episode_length[env_idx]
+            self.cached_episode_length.at[env_idx].set(env_lengths[-1])
+            logged_data['episode_length'].extend(env_lengths[:-1])
 
-            done_indices = jnp.where(dones)[0]
-            episode_lengths = jnp.diff(jnp.concatenate([jnp.array([-1]), done_indices + 1]))
-            episode_lengths = episode_lengths.at[0].add(cached_episode_length)
-
-            start_idx = 0
-            for episode_length in episode_lengths:
-                logged_data["episode_length"].append(episode_length.item())
-                episode_return = cached_episode_return + jnp.sum(rewards[start_idx:start_idx + episode_length])
-                logged_data['episode_return'].append(episode_return.item())
-                cached_episode_return = 0
-                average_reward = episode_return / episode_length
-                logged_data["average_reward"].append(average_reward.item())
-
-            cached_episode_length = len(dones) - done_indices[-1] + 1
-            self.cached_episode_length = self.cached_episode_length.at[env_idx].set(cached_episode_length)
-            cached_episode_return = jnp.sum(rewards[done_indices[-1] + 1:])
-            self.cached_episode_return = self.cached_episode_return.at[env_idx].set(cached_episode_return)
+            env_returns = [jnp.sum(rewards) for rewards in episode_rewards]
+            env_returns[0] += self.cached_episode_return[env_idx]
+            self.cached_episode_return.at[env_idx].set(env_returns[-1])
+            logged_data['episode_return'].extend(env_returns[:-1])
+        logged_data['average_reward'] = [jnp.mean(rewards)]
         self.publish(logged_data)

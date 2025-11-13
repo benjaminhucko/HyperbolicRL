@@ -2,6 +2,7 @@ import time
 
 import jax
 from flax import nnx
+from tqdm import tqdm
 
 from agents.agent_factory import make_agent
 from agents.random_policy import RandomPolicy
@@ -39,7 +40,7 @@ def train_agent(env, config):
         next_state, data = sample_init_data(rngs(), env, next_obs, config)
         buffer = buffer.add_data(*data)
 
-    for update_idx in range(config.num_updates):
+    for update_idx in tqdm(range(config.num_updates)):
         start_time = time.time()
         next_obs, data = run_episode(agent.behavioral_policy(), env, next_obs, config.update_every, rngs())
         print(f'Episode {update_idx} finished in {time.time() - start_time} seconds')
@@ -49,7 +50,9 @@ def train_agent(env, config):
         start_time = time.time()
         agent.update(buffer, rngs)
         print(f'agent updated {update_idx} finished in {time.time() - start_time} seconds')
+        start_time = time.time()
         logger.log(data)
+        print(f'data logged {update_idx} finished in {time.time() - start_time} seconds')
     return agent
 
 def main():
