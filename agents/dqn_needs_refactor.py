@@ -1,30 +1,28 @@
 from functools import partial
 
-import distrax
 import jax
 import jax.numpy as jnp
 import optax
 from flax import nnx
 from jax import vmap
 
-def project_distribution2(supports, weights, target_support):
-    v_min, v_max = target_support[0], target_support[-1]
-    N = target_support.shape[0]
+
+def project_distribution2(projected_from, weights, projected_to):
+    v_min, v_max = projected_to[0], projected_to[-1]
+    N = projected_to.shape[0]
     delta_z = (v_max - v_min) / (N - 1)
-    clipped_support = jnp.clip(supports, v_min, v_max)
-    b = (clipped_support - v_min) / delta_z
+    b = (projected_from - v_min) / delta_z
     l = jnp.floor(b).astype(jnp.int32)
-    u = jnp.ceil(b).astype(jnp.int32)
+    u = l + 1
 
     l = jnp.clip(l, 0, N - 1)
     u = jnp.clip(u, 0, N - 1)
 
-    m = jnp.zeros_like(target_support)
+    m = jnp.zeros_like(projected_from)
     m = m.at[l].add(weights * (u - b))
     m = m.at[u].add(weights * (b - l))
-    m_sum = jnp.sum(m)
-    m = jnp.where(m_sum > 0, m / m_sum, jnp.ones_like(m) / m.size)
-    return m # normalize
+    # jax.debug.print('dz: {dz}, b: {b}, u: {u}, l: {l}, m {m}, sum {s}, w {w}', dz=delta_z, b=b[:5], u=u[:5], l=l[:5], m=m[:5], s=m_sum, w=weights[:5])
+    return m
 
 def select_actions(values, actions):
     greedy_values = jnp.take_along_axis(values,
@@ -34,8 +32,8 @@ def select_actions(values, actions):
 
 def project_distribution(projected_from, weights, projected_to):
     v_min, v_max = projected_to[0], projected_to[-1]
-    num_dims = projected_from.shape[0]
-    delta_z = (v_max - v_min) / (num_dims - 1)
+    N = projected_to.shape[0]
+    delta_z = (v_max - v_min) / (N - 1)
     distance = jnp.abs(projected_from[:, None] - projected_to[None, :])
     contribution = jnp.clip(1 - distance / delta_z, 0.0, 1.0)
     projected = jnp.sum(contribution * weights[:, None], axis=0)
@@ -49,6 +47,7 @@ def q_loss_fn(actual, targets):
 
 def categorical_loss_fn(actual, targets):
     errors = optax.softmax_cross_entropy(actual, targets)
+    # errors = (-targets * jnp.log(actual)).sum(axis=1)
     loss = jnp.mean(errors)
     return loss, errors
 
@@ -71,6 +70,7 @@ def duelling_dist_model_post(out, atoms, logits):
 def direct_dist_model_post(out, atoms, logits):
     q_values = out
     post_out = q_values.reshape((q_values.shape[0], -1, atoms))
+
     if not logits:
         post_out = nnx.softmax(post_out, axis=-1)
     return post_out
@@ -119,10 +119,14 @@ def make_loss_fn(config):
     return partial(get_loss, model_output_fn=model_output_fn, loss_fn=loss_fn)
 
 def distributional_targets_fn(rewards, discounts, target_prob_distribution, support):
-    target_support = rewards[:, None] + jnp.outer(discounts, support)
     v_min, v_max = support[0], support[-1]
+
+    target_support = rewards[:, None] + jnp.outer(discounts, support)
     target_support = jnp.clip(target_support, v_min, v_max)
-    batched_project_fn = vmap(project_distribution, in_axes=(0, 0, None))
+    # project_distribution2 has sometimes projected distribution of 0s
+    batched_project_fn = vmap(project_distribution2, in_axes=(0, 0, None))
+    # jax.debug.print('discounts: {d} support {s}, outer {o}, rewards: {r}, target {target}', d=discounts[:5], s=support[:5],
+    #                 o=jnp.outer(discounts, support)[:5], r=rewards[:5], target=target_support[:5])
     targets = batched_project_fn(target_support, target_prob_distribution, support)
     return targets
 

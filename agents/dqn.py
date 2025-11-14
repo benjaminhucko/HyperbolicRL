@@ -17,6 +17,7 @@ class DQNPolicy(nnx.Module):
     def __call__(self, observations, key):
         q_values = self.q_value_fn(self.model, observations, key)
         action = jnp.argmax(q_values, axis=-1)
+        # jax.debug.print('q_values {q}', q=q_values)
         return action, {}
 
 class DQNAgent(Agent):
@@ -51,11 +52,15 @@ class DQNAgent(Agent):
             states, actions, rewards, next_states, discounts, idxs = buffer.sample_batch(self.config.batch_size, rngs())
             next_actions, _ = self.policy(next_states, rngs())
             next_values = self.model_out(self.target_model, next_states, rngs())
+            print(jnp.unique(next_actions, return_counts=True))
             greedy_values = select_actions(next_values, next_actions)
             targets = self.targets_fn(rewards, discounts, greedy_values)
 
+            outputs = self.model_out(self.policy.model, states, rngs())
+            outputs = select_actions(outputs, actions)
             errors = self.train_step(self.policy.model, self.optimizer, targets, states, actions, rngs(), self.loss_fn)
-
+            print(f'E(t): {(targets @ self.support)[:5]}, E(a): {(outputs @ self.support)[:5]}, '
+                  f'errors: {errors.shape} {jnp.mean(errors)}')
             # Priority replay
             buffer.update_priorities(idxs, errors)
 
