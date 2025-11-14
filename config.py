@@ -1,6 +1,8 @@
 import argparse
 def parse_args():
     parser = argparse.ArgumentParser()
+    parser.add_argument('--geometry', type=str, choices=['euclidean', 'hyperbolic'], default='euclidean')
+
     # Setup args
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--env-name', type=str, default='Breakout-MinAtar')

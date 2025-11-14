@@ -41,13 +41,13 @@ def train_agent(env, config):
         buffer = buffer.add_data(*data)
 
     for update_idx in tqdm(range(config.num_updates)):
-        # start_time = time.time()
+        start_time = time.time()
         next_obs, data = run_episode(agent.behavioral_policy(), env, next_obs, config.update_every, rngs())
-        # print(f'Episode {update_idx} finished in {time.time() - start_time} seconds')
-        # start_time = time.time()
+        print(f'Episode {update_idx} finished in {time.time() - start_time} seconds')
         buffer = buffer.add_data(*data, next_obs)
+        start_time = time.time()
         agent.update(buffer, rngs)
-        # print(f'agent updated {update_idx} finished in {time.time() - start_time} seconds')
+        print(f'agent updated {update_idx} finished in {time.time() - start_time} seconds')
         logger.log(data)
     return agent
 

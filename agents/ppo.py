@@ -1,5 +1,3 @@
-from typing import final
-
 import distrax
 import jax
 import optax
@@ -8,16 +6,19 @@ import rlax
 from flax import nnx
 
 from agents.agent import Agent
-from neural_networks import ActorCritic
+from networks.euclidean import ActorCritic
+from networks.factory import make_network, make_optim
+
 
 class PPOPolicy(nnx.Module):
     def __init__(self, obs_shape, n_actions, rngs, config):
-        self.model = ActorCritic(obs_shape[-1], n_actions, rngs, config)
+        self.model = make_network(obs_shape[-1], n_actions, rngs, config)
 
     def __call__(self, obs, key):
-        action_logits, values = self.model(obs)
+        network_key, sample_key = jax.random.split(key, 2)
+        action_logits, values = self.model(obs, network_key)
         policy = distrax.Categorical(logits=action_logits)
-        action = policy.sample(seed=key)
+        action = policy.sample(seed=sample_key)
         log_probs = policy.log_prob(action).squeeze()
 
         return action, {'log_probs': log_probs, 'values': values.squeeze()}
@@ -27,7 +28,7 @@ class PPOAgent(Agent):
     def __init__(self, obs_shape, n_actions, rngs, config):
         super().__init__(obs_shape, n_actions, rngs, config)
         self.policy = PPOPolicy(obs_shape, n_actions, rngs, config)
-        self.optimizer = nnx.Optimizer(self.policy.model, optax.adam(learning_rate=self.config.learning_rate), wrt=nnx.Param)
+        self.optimizer = make_optim(self.policy.model, config)
 
     @staticmethod
     @nnx.jit
@@ -49,7 +50,7 @@ class PPOAgent(Agent):
     def train_step(model, optimizer, returns, advantages, observations, actions, old_log_probs,
                    clip_threshold, regularization, value_weight):
         def ppo_loss(model):
-            action_logits, values = model(observations)
+            action_logits, values = model(observations, None)
 
             policy = distrax.Categorical(action_logits)
             log_probs = policy.log_prob(actions)
@@ -69,7 +70,7 @@ class PPOAgent(Agent):
 
     def update(self, buffer, rng):
         obs, actions, rewards, dones, log_probs, values, final_obs = buffer.get()
-        _, final_value = self.policy.model(final_obs)
+        _, final_value = self.policy.model(final_obs, rng())
         final_value = final_value.squeeze()
 
         # discounts = jnp.where(dones, 0, self.config.gamma)

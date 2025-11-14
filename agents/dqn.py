@@ -1,4 +1,3 @@
-import jax
 import jax.numpy as jnp
 import optax
 from flax import nnx
@@ -6,12 +5,12 @@ from flax import nnx
 from agents.agent import Agent
 from agents.dqn_needs_refactor import make_q_value_fn, make_output_fn, make_loss_fn, make_targets_fn, select_actions
 from agents.random_policy import EpsilonGreedyPolicy
-from neural_networks import get_network_class
+from networks.factory import make_network, make_optim
 
 
 class DQNPolicy(nnx.Module):
     def __init__(self, obs_shape, n_actions, rng, config, support):
-        self.model = get_network_class(config)(obs_shape[-1], n_actions, rng, config)
+        self.model = make_network(obs_shape[-1], n_actions, rng, config)
         self.q_value_fn = nnx.static(make_q_value_fn(config, support))
 
     def __call__(self, observations, key):
@@ -32,12 +31,12 @@ class DQNAgent(Agent):
         self.targets_fn = nnx.jit(make_targets_fn(config, self.support))
 
         if config.ddqn:
-            self.target_model = get_network_class(config)(obs_shape[-1], n_actions, rngs, config)
+            self.target_model = make_network(obs_shape[-1], n_actions, rngs, config)
             nnx.update(self.target_model, nnx.state(self.policy.model))
         else:
             self.target_model = self.policy.model
 
-        self.optimizer = nnx.Optimizer(self.policy.model, optax.adam(learning_rate=self.config.learning_rate), wrt=nnx.Param)
+        self.optimizer = make_optim(self.policy.model, self.config)
 
     @staticmethod
     @nnx.jit(static_argnames=['loss_fn'])

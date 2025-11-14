@@ -2,32 +2,40 @@ from functools import partial
 
 import jax
 import jax.numpy as jnp
+import hypax.nn as hnn
 from flax import nnx
+from hypax.array import ManifoldArray
+
 
 def activation_fn_factory(activation_name):
     if activation_name == 'relu':
-        return nnx.relu
+        return hnn.hrelu
     elif activation_name == 'elu':
-        return nnx.elu
-    elif activation_name == 'gelu':
-        return nnx.gelu
+        return hnn.helu
     else:
         raise ValueError(f'Unknown activation function {activation_name}')
 
-class CNN(nnx.Module):
-    def __init__(self, in_channels, out_channels, rngs, config):
+class CombatibilityLayer(nnx.Module):
+    def __init__(self, network):
+        self.network = network
+    def __call__(self, obs, key):
+        obs = obs.transpose((0, 3, 1, 2))
+        return self.network(obs, key)
+
+class HCNN(nnx.Module):
+    def __init__(self, in_channels, out_channels, manifold, rngs, config):
         super().__init__()
-        cnn_args = {'kernel_size': config.kernel_size, 'strides': config.stride, 'rngs': rngs}
+        cnn_args = {'kernel_size': config.kernel_size, 'stride': config.stride, 'manifold': manifold, 'rngs': rngs}
         self.activation_fn = activation_fn_factory(config.activation)
         layers = []
         if config.n_conv == 1:
-            layers.append(nnx.Conv(in_channels, out_channels, **cnn_args))
+            layers.append(hnn.HConvolution2D(in_channels, out_channels, **cnn_args))
         else:
-            layers.append(nnx.Conv(in_channels, config.hidden_channels, **cnn_args))
-            hidden_layers = [nnx.Conv(config.hidden_channels, config.hidden_channels, **cnn_args)
+            layers.append(hnn.HConvolution2D(in_channels, config.hidden_channels, **cnn_args))
+            hidden_layers = [hnn.HConvolution2D(config.hidden_channels, config.hidden_channels, **cnn_args)
                              for _ in range(config.n_conv - 2)]
             layers.extend(hidden_layers)
-            layers.append(nnx.Conv(config.hidden_channels, out_channels, **cnn_args))
+            layers.append(hnn.HConvolution2D(config.hidden_channels, out_channels, **cnn_args))
         self.layers = nnx.List(layers)
 
     def __call__(self, x):
@@ -37,23 +45,22 @@ class CNN(nnx.Module):
         x = self.layers[-1](x)
         return x
 
-class MLP(nnx.Module):
-    def __init__(self, in_channels, out_channels, rngs, config):
+class HMLP(nnx.Module):
+    def __init__(self, in_channels, out_channels, manifold, rngs, config):
         self.activation_fn = activation_fn_factory(config.activation)
         linear_layer_cls = get_linear_class(config)
         self.noisy = config.noisy_nets
-        self.input_layer = linear_layer_cls(in_channels, config.hidden_channels, rngs=rngs)
-        self.output_layer = linear_layer_cls(config.hidden_channels, out_channels, rngs=rngs)
 
         layers = []
+        mlp_args = {'manifold': manifold, 'rngs': rngs}
         if config.n_linear == 1:
-            layers.append(linear_layer_cls(in_channels, out_channels, rngs=rngs))
+            layers.append(linear_layer_cls(in_channels, out_channels, **mlp_args))
         else:
-            layers.append(linear_layer_cls(in_channels, config.hidden_channels, rngs=rngs))
-            hidden_layers = [linear_layer_cls(config.hidden_channels, config.hidden_channels, rngs=rngs)
+            layers.append(linear_layer_cls(in_channels, config.hidden_channels, **mlp_args))
+            hidden_layers = [linear_layer_cls(config.hidden_channels, config.hidden_channels, **mlp_args)
                              for _ in range(config.n_linear - 2)]
             layers.extend(hidden_layers)
-            layers.append(linear_layer_cls(config.hidden_channels, out_channels, rngs=rngs))
+            layers.append(linear_layer_cls(config.hidden_channels, out_channels, **mlp_args))
         self.layers = nnx.List(layers)
 
         self.forward = nnx.static(self.noisy_forward if config.noisy_nets else self.normal_forward)
@@ -77,36 +84,44 @@ class MLP(nnx.Module):
         return self.forward(x, key)
 
 
-class ActorCritic(nnx.Module):
-    def __init__(self, in_channels, n_actions, rngs, config):
+class HActorCritic(nnx.Module):
+    def __init__(self, in_channels, n_actions, manifold, rngs, config):
         self.atoms = config.atoms
-        self.feature_extractor = CNN(in_channels, config.hidden_channels, rngs, config)
+        self.manifold = manifold
+        self.feature_extractor = HCNN(in_channels, config.hidden_channels, self.manifold, rngs, config)
 
         self.activation_fn = activation_fn_factory(config.activation)
-        self.actor = MLP(config.hidden_channels * 100, n_actions * self.atoms, rngs, config)
-        self.critic = MLP(config.hidden_channels * 100, self.atoms, rngs, config)
+        self.actor = HMLP(config.hidden_channels * 6 * 6, n_actions * self.atoms, self.manifold, rngs, config)
+        self.critic = HMLP(config.hidden_channels * 6 * 6, self.atoms, self.manifold, rngs, config)
 
     def __call__(self, x, key=None):
-        features = self.feature_extractor(x)
-        features = features.reshape(features.shape[0], -1)
-        features = self.activation_fn(features)
-        actor = self.actor(features, key)
-        critic = self.critic(features, key)
+        x = ManifoldArray(data=x, manifold=self.manifold)
+        x = self.feature_extractor(x)
+        x = ManifoldArray(
+            data=x.array.reshape(x.shape[0], -1),
+            manifold=self.manifold
+        )
+        x = self.activation_fn(x)
+        actor = self.actor(x, key)
+        critic = self.critic(x, key)
+        return actor.array, critic.array
 
-        return actor, critic
-
-class Critic(nnx.Module):
-    def __init__(self, in_channels, n_actions, rngs, config):
+class HCritic(nnx.Module):
+    def __init__(self, in_channels, n_actions, manifold, rngs, config):
         self.atoms = config.atoms
-
-        self.feature_extractor = CNN(in_channels, config.hidden_channels, rngs, config)
+        self.manifold = manifold
+        self.feature_extractor = HCNN(in_channels, config.hidden_channels, manifold, rngs, config)
         self.activation_fn = activation_fn_factory(config.activation)
-        self.mlp = MLP(config.hidden_channels * 100, n_actions * self.atoms, rngs, config)
+        self.mlp = HMLP(config.hidden_channels * 6 * 6, n_actions * self.atoms, manifold, rngs, config)
 
     def __call__(self, x, key=None):
+        x = ManifoldArray(data=x, manifold=self.manifold)
         x = self.feature_extractor(x)
         x = self.activation_fn(x)
-        x = x.reshape((x.shape[0], -1))
+        x = ManifoldArray(
+            data=x.array.reshape(x.shape[0], -1),
+            manifold=self.manifold
+        )
         x = self.mlp(x, key)
         return x
 
@@ -139,15 +154,8 @@ class NoisyLinear(nnx.Module):
         b = self.b_mu + self.b_sigma * noise_b
         return x @ w + b
 
-
-def get_network_class(config):
-    if config.duelling:
-        return ActorCritic
-    else:
-        return Critic
-
 def get_linear_class(config):
     if config.noisy_nets:
         return partial(NoisyLinear, config=config)
     else:
-        return nnx.Linear
+        return hnn.HLinear
