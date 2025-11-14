@@ -1,8 +1,10 @@
 import gymnax
-from flax import struct
-import jax.numpy as jnp
-from jax import vmap
 import jax
+import jax.numpy as jnp
+from flax import struct, nnx
+from jax import vmap
+from gymnax.visualize import Visualizer
+
 
 @struct.dataclass
 class EnvState:
@@ -10,9 +12,9 @@ class EnvState:
     state: jax.Array
 
 class BatchEnv:
-    def __init__(self, env, config):
+    def __init__(self, env, num_envs):
         self.env = env
-        self.num_envs = config.num_envs
+        self.num_envs = num_envs
 
     def action_space(self, params):
         return self.env.action_space(params)
@@ -41,3 +43,54 @@ class BatchEnv:
     def step(self, key, *args):
         batch_keys = self._batch_keys(key)
         return vmap(self.env.step, in_axes=(0, 0, 0, None))(batch_keys, *args)
+
+class XEnvironment(nnx.Module):
+    def __init__(self, env, env_params):
+        self.env = nnx.static(env)
+        self.env_params = nnx.static(env_params)
+        self.env_state = nnx.data(None)
+
+    def action_space(self):
+        return self.env.action_space(self.env_params)
+
+    def observation_space(self):
+        return self.env.observation_space(self.env_params)
+
+    def reset(self, key):
+        obs, state = self.env.reset(key, self.env_params)
+        self.env_state = nnx.data(state)
+        return obs
+
+    def step(self, action, key):
+        obs, state, reward, done, _ = self.env.step(key, self.env_state, action, self.env_params)
+        self.env_state = nnx.data(state)
+        return obs, reward, done
+
+
+def make_env(env_name, num_envs=1):
+    env, env_params = gymnax.make(env_name)
+    batch_env = BatchEnv(env, num_envs)
+    return XEnvironment(batch_env, env_params)
+
+
+def visualize_performance(env, env_params, policy, key):
+    state_seq, reward_seq = [], []
+    key, key_reset = jax.random.split(key)
+    obs, env_state = env.reset(key_reset, env_params)
+    while True:
+        state_seq.append(env_state)
+        key, key_act, key_step = jax.random.split(key, 3)
+        action, _ = policy(obs[None, :], key_act)
+        next_obs, next_env_state, reward, done, info = env.step(
+            key_step, env_state, action.squeeze(), env_params
+        )
+        reward_seq.append(reward)
+        if done:
+            break
+        else:
+          obs = next_obs
+          env_state = next_env_state
+
+    cum_rewards = jnp.cumsum(jnp.array(reward_seq))
+    vis = Visualizer(env, env_params, state_seq, cum_rewards)
+    vis.animate(f"visualization/anim.gif")
