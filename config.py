@@ -32,12 +32,12 @@ def parse_args():
     parser.add_argument('--omega', type=float, default=0.6) # priority
     parser.add_argument('--n-steps', type=int, default=4) # n_step td
     parser.add_argument('--std-init', type=float, default=0.1) # noisy nets init
-    parser.add_argument('--atoms', type=int, default=201)
+    parser.add_argument('--atoms', type=int, default=51)
     parser.add_argument('--v-min', type=float, default=0)
-    parser.add_argument('--v-max', type=float, default=10.0)
+    parser.add_argument('--v-max', type=float, default=3.0)
 
     # Convergence args
-    parser.add_argument('--learning_rate', type=float, default=1e-3)
+    parser.add_argument('--learning_rate', type=float, default=5e-3)
     parser.add_argument('--n-epochs', type=int, default=5)
     parser.add_argument('--batch-size', type=int, default=256)
     parser.add_argument('--activation', type=str, default='relu')

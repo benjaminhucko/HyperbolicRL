@@ -6,6 +6,24 @@ import optax
 from flax import nnx
 from jax import vmap
 
+def batch_project(projected_from, weights, projected_to):
+    v_min, v_max = projected_to[0], projected_to[-1]
+    B, N = projected_from.shape
+    delta_z = (v_max - v_min) / (N - 1)
+    b = (projected_from - v_min) / delta_z
+    l = jnp.floor(b).astype(jnp.int32)
+    u = l + 1
+
+    l = jnp.clip(l, 0, N - 1)
+    u = jnp.clip(u, 0, N - 1)
+    batch_idx = jnp.arange(B)[:, None]
+
+    m = jnp.zeros_like(projected_from)
+    m = m.at[batch_idx, l].add(weights * (u - b))
+    m = m.at[batch_idx, u].add(weights * (b - l))
+
+    # jax.debug.print('dz: {dz}, b: {b}, u: {u}, l: {l}, m {m}, sum {s}, w {w}', dz=delta_z, b=b[:5], u=u[:5], l=l[:5], m=m[:5], s=m.sum(-1), w=weights[:5])
+    return m
 
 def project_distribution2(projected_from, weights, projected_to):
     v_min, v_max = projected_to[0], projected_to[-1]
@@ -124,10 +142,10 @@ def distributional_targets_fn(rewards, discounts, target_prob_distribution, supp
     target_support = rewards[:, None] + jnp.outer(discounts, support)
     target_support = jnp.clip(target_support, v_min, v_max)
     # project_distribution2 has sometimes projected distribution of 0s
-    batched_project_fn = vmap(project_distribution2, in_axes=(0, 0, None))
+    # batched_project_fn = vmap(project_distribution2, in_axes=(0, 0, None))
     # jax.debug.print('discounts: {d} support {s}, outer {o}, rewards: {r}, target {target}', d=discounts[:5], s=support[:5],
     #                 o=jnp.outer(discounts, support)[:5], r=rewards[:5], target=target_support[:5])
-    targets = batched_project_fn(target_support, target_prob_distribution, support)
+    targets = batch_project(target_support, target_prob_distribution, support)
     return targets
 
 def classic_targets_fn(rewards, discounts, greedy_targets):
