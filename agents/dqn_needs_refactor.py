@@ -141,10 +141,6 @@ def distributional_targets_fn(rewards, discounts, target_prob_distribution, supp
 
     target_support = rewards[:, None] + jnp.outer(discounts, support)
     target_support = jnp.clip(target_support, v_min, v_max)
-    # project_distribution2 has sometimes projected distribution of 0s
-    # batched_project_fn = vmap(project_distribution2, in_axes=(0, 0, None))
-    # jax.debug.print('discounts: {d} support {s}, outer {o}, rewards: {r}, target {target}', d=discounts[:5], s=support[:5],
-    #                 o=jnp.outer(discounts, support)[:5], r=rewards[:5], target=target_support[:5])
     targets = batch_project(target_support, target_prob_distribution, support)
     return targets
 

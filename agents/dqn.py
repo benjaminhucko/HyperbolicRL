@@ -55,13 +55,8 @@ class DQNAgent(Agent):
             print(jnp.unique(next_actions, return_counts=True))
             greedy_values = select_actions(next_values, next_actions)
             targets = self.targets_fn(rewards, discounts, greedy_values)
-            # targets = jnp.zeros_like(targets).at[:, 0].set(1)
-            outputs = self.model_out(self.policy.model, states, rngs())
-            outputs = select_actions(outputs, actions)
+
             errors = self.train_step(self.policy.model, self.optimizer, targets, states, actions, rngs(), self.loss_fn)
-            print(f'E(t): {(targets @ self.support)[0]}, E(a): {(outputs @ self.support)[0]}, '
-                  f'discounts{discounts[0]}, rewards{rewards[0]} '
-                  f'errors: {jnp.mean(errors)}')
             # Priority replay
             buffer.update_priorities(idxs, errors)
 

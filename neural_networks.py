@@ -19,18 +19,22 @@ class CNN(nnx.Module):
         super().__init__()
         cnn_args = {'kernel_size': config.kernel_size, 'strides': config.stride, 'rngs': rngs}
         self.activation_fn = activation_fn_factory(config.activation)
-        self.input_layer = nnx.Conv(in_channels, config.hidden_channels, **cnn_args)
-        self.hidden_layers = nnx.List([nnx.Conv(config.hidden_channels, config.hidden_channels, **cnn_args)])
-        self.output_layer = nnx.Conv(config.hidden_channels, out_channels, **cnn_args)
+        layers = []
+        if config.n_conv == 1:
+            layers.append(nnx.Conv(in_channels, out_channels, **cnn_args))
+        else:
+            layers.append(nnx.Conv(in_channels, config.hidden_channels, **cnn_args))
+            hidden_layers = [nnx.Conv(config.hidden_channels, config.hidden_channels, **cnn_args)
+                             for _ in range(config.n_conv - 2)]
+            layers.extend(hidden_layers)
+            layers.append(nnx.Conv(config.hidden_channels, out_channels, **cnn_args))
+        self.layers = nnx.List(layers)
 
     def __call__(self, x):
-        x = self.input_layer(x)
-        x = self.activation_fn(x)
-        for layer in self.hidden_layers:
+        for layer in self.layers[:-1]:
             x = layer(x)
             x = self.activation_fn(x)
-
-        x = self.output_layer(x)
+        x = self.layers[-1](x)
         return x
 
 class MLP(nnx.Module):
@@ -40,19 +44,33 @@ class MLP(nnx.Module):
         self.noisy = config.noisy_nets
         self.input_layer = linear_layer_cls(in_channels, config.hidden_channels, rngs=rngs)
         self.output_layer = linear_layer_cls(config.hidden_channels, out_channels, rngs=rngs)
+
+        layers = []
+        if config.n_linear == 1:
+            layers.append(linear_layer_cls(in_channels, out_channels, rngs=rngs))
+        else:
+            layers.append(linear_layer_cls(in_channels, config.hidden_channels, rngs=rngs))
+            hidden_layers = [linear_layer_cls(config.hidden_channels, config.hidden_channels, rngs=rngs)
+                             for _ in range(config.n_linear - 2)]
+            layers.extend(hidden_layers)
+            layers.append(linear_layer_cls(config.hidden_channels, out_channels, rngs=rngs))
+        self.layers = nnx.List(layers)
+
         self.forward = nnx.static(self.noisy_forward if config.noisy_nets else self.normal_forward)
 
-    def noisy_forward(self, x, key):
-        key1, key2 = jax.random.split(key, 2)
-        x = self.input_layer(x, key1)
-        x = self.activation_fn(x)
-        x = self.output_layer(x, key2)
+    def noisy_forward(self, x, layer_key):
+        keys = jax.random.split(layer_key, len(self.layers))
+        for layer, key in zip(self.layers[:-1], keys[:-1]):
+            x = layer(x, key)
+            x = self.activation_fn(x)
+        x = self.layers[-1](x, keys[-1])
         return x
 
     def normal_forward(self, x, *args):
-        x = self.input_layer(x)
-        x = self.activation_fn(x)
-        x = self.output_layer(x)
+        for layer in self.layers[:-1]:
+            x = layer(x)
+            x = self.activation_fn(x)
+        x = self.layers[-1](x)
         return x
 
     def __call__(self, x, key=None):

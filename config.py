@@ -37,19 +37,22 @@ def parse_args():
     parser.add_argument('--v-max', type=float, default=3.0)
 
     # Convergence args
-    parser.add_argument('--learning_rate', type=float, default=5e-3)
+    parser.add_argument('--learning_rate', type=float, default=1e-3)
     parser.add_argument('--n-epochs', type=int, default=5)
     parser.add_argument('--batch-size', type=int, default=256)
-    parser.add_argument('--activation', type=str, default='relu')
+    parser.add_argument('--activation', type=str, default='elu')
     parser.add_argument('--epsilon', type=float, default=0.2)
 
     ## CNN
     parser.add_argument('--hidden-channels', type=int, default=64)
     parser.add_argument('--kernel-size', type=int, default=3)
     parser.add_argument('--stride', type=int, default=1)
+    parser.add_argument('--n-conv', type=int, default=2)
 
     ## MLP
     parser.add_argument('--hidden-features', type=int, default=256)
+    parser.add_argument('--n-linear', type=int, default=2)
+
     return parser.parse_args()
 
 def apply_rainbow_flags(config):
