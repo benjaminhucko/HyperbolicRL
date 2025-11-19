@@ -1,3 +1,5 @@
+import time
+
 import distrax
 import jax
 import optax
@@ -63,8 +65,9 @@ class PPOAgent(Agent):
 
             loss = policy_loss - regularization * entropy_loss + value_weight * value_loss
             return loss
-
+        print("GETTING GRADS")
         grads = nnx.grad(ppo_loss)(model)
+        print("RECIEVED GRADS")
         optimizer.update(model, grads)  # in-place updates
         return {}
 
@@ -90,10 +93,12 @@ class PPOAgent(Agent):
             for start_idx in range(0, epoch_size, self.config.batch_size):
                 end_idx = start_idx + self.config.batch_size
                 idxs = epoch_indices[start_idx:end_idx]
+                start_time = time.time()
                 self.train_step(self.policy.model, self.optimizer, returns[idxs], advantages[idxs],
                                 obs[idxs], actions[idxs], log_probs[idxs],
                                 self.config.clip_threshold, self.config.entorpy_weight,
                                 self.config.value_weight)
+                print('Updated batch in: ', time.time() - start_time)
 
     def behavioral_policy(self):
         return self.policy

@@ -59,11 +59,13 @@ class XEnvironment(nnx.Module):
     def reset(self, key):
         obs, state = self.env.reset(key, self.env_params)
         self.env_state = nnx.data(state)
+        obs = obs.transpose((0, 3, 1, 2))
         return obs
 
     def step(self, action, key):
         obs, state, reward, done, _ = self.env.step(key, self.env_state, action, self.env_params)
         self.env_state = nnx.data(state)
+        obs = obs.transpose((0, 3, 1, 2))
         return obs, reward, done
 
 

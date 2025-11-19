@@ -15,13 +15,6 @@ def activation_fn_factory(activation_name):
     else:
         raise ValueError(f'Unknown activation function {activation_name}')
 
-class CombatibilityLayer(nnx.Module):
-    def __init__(self, network):
-        self.network = network
-    def __call__(self, obs, key):
-        obs = obs.transpose((0, 3, 1, 2))
-        return self.network(obs, key)
-
 class HCNN(nnx.Module):
     def __init__(self, in_channels, out_channels, manifold, rngs, config):
         super().__init__()
@@ -95,11 +88,11 @@ class HActorCritic(nnx.Module):
         self.critic = HMLP(config.hidden_channels * 6 * 6, self.atoms, self.manifold, rngs, config)
 
     def __call__(self, x, key=None):
-        x = ManifoldArray(data=x, manifold=self.manifold)
+        x = ManifoldArray(x, self.manifold)
         x = self.feature_extractor(x)
         x = ManifoldArray(
-            data=x.array.reshape(x.shape[0], -1),
-            manifold=self.manifold
+            x.data.reshape(x.shape[0], -1),
+            self.manifold
         )
         x = self.activation_fn(x)
         actor = self.actor(x, key)
@@ -119,7 +112,7 @@ class HCritic(nnx.Module):
         x = self.feature_extractor(x)
         x = self.activation_fn(x)
         x = ManifoldArray(
-            data=x.array.reshape(x.shape[0], -1),
+            data=x.data.reshape(x.shape[0], -1),
             manifold=self.manifold
         )
         x = self.mlp(x, key)
