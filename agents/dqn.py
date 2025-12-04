@@ -1,14 +1,12 @@
-import jax
 import jax.numpy as jnp
 import optax
-import rlax
 from flax import nnx
-from jax import grad
 
 from agents.agent import Agent
 from agents.dqn_needs_refactor import make_q_value_fn, make_output_fn, make_loss_fn, make_targets_fn, select_actions
 from agents.random_policy import EpsilonGreedyPolicy
 from networks.factory import make_network, make_optim
+
 
 class DQNPolicy(nnx.Module):
     def __init__(self, obs_shape, n_actions, rng, config, support):
