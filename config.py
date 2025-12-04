@@ -1,7 +1,20 @@
 import argparse
+
+from sympy.vector.implicitregion import conic_coeff
+
+
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--geometry', type=str, choices=['euclidean', 'hyperbolic'], default='euclidean')
+    parser.add_argument('--geometry', type=str, choices=['euclidean', 'hyperbolic', 'hybrid'],
+                        default='euclidean')
+    parser.add_argument('--learn-curvature', action='store_true')
+
+
+    # Hyper papers replication
+    parser.add_argument('--hyper', action='store_true')
+    parser.add_argument('--hyperpp', action='store_true')
+    parser.add_argument('--baseline', action='store_true')
+
 
     # Setup args
     parser.add_argument('--seed', type=int, default=0)
@@ -35,12 +48,13 @@ def parse_args():
     parser.add_argument('--n-steps', type=int, default=4) # n_step td
     parser.add_argument('--std-init', type=float, default=0.1) # noisy nets init
     parser.add_argument('--atoms', type=int, default=51)
-    parser.add_argument('--v-min', type=float, default=0)
-    parser.add_argument('--v-max', type=float, default=3.0)
+    parser.add_argument('--v-min', type=float, default=-10)
+    parser.add_argument('--v-max', type=float, default=10)
 
     # Convergence args
     parser.add_argument('--learning_rate', type=float, default=1e-3)
-    parser.add_argument('--n-epochs', type=int, default=5)
+
+    parser.add_argument('--n-epochs', type=int, default=20)
     parser.add_argument('--batch-size', type=int, default=256)
     parser.add_argument('--activation', type=str, default='elu')
     parser.add_argument('--epsilon', type=float, default=0.2)
@@ -58,6 +72,9 @@ def parse_args():
     parser.add_argument('--hidden-features', type=int, default=64)
     parser.add_argument('--n-linear', type=int, default=2)
 
+    parser.add_argument('--visualize', action='store_true')
+
+
     return parser.parse_args()
 
 def apply_rainbow_flags(config):
@@ -71,19 +88,37 @@ def apply_rainbow_flags(config):
         config.distributional = True # implementing
     if not config.priority:
         config.omega = 0
+
     if not config.ddqn:
         config.polyak_tau = 1
+
     if not config.n_td:
         config.n_steps = 0
-    if config.noisy_nets:
-        config.epsilon = 0
     if not config.distributional:
         config.atoms = 1
+
+    if config.noisy_nets:
+        config.epsilon = 0
+
+    if config.distributional:
+        config.learning_rate = 2.5e-4
     return config
+
+
+def apply_hyper_flags(config):
+    if config.hyper or config.hyperpp:
+        config.n_linear = 1
+        config.geometry = 'hybrid'
+        config.kernel_size = 3
+        config.stride = 1
+        config.hidden_features = 256
+    return config
+
 
 def get_config():
     config = parse_args()
     config = apply_rainbow_flags(config)
+    config = apply_hyper_flags(config)
     config.sample_init = (config.strategy == 'dqn')
 
     return config

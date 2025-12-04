@@ -1,12 +1,14 @@
+import jax
 import jax.numpy as jnp
 import optax
+import rlax
 from flax import nnx
+from jax import grad
 
 from agents.agent import Agent
 from agents.dqn_needs_refactor import make_q_value_fn, make_output_fn, make_loss_fn, make_targets_fn, select_actions
 from agents.random_policy import EpsilonGreedyPolicy
 from networks.factory import make_network, make_optim
-
 
 class DQNPolicy(nnx.Module):
     def __init__(self, obs_shape, n_actions, rng, config, support):
@@ -33,8 +35,6 @@ class DQNAgent(Agent):
         if config.ddqn:
             self.target_model = make_network(obs_shape[-1], n_actions, rngs, config)
             nnx.update(self.target_model, nnx.state(self.policy.model))
-        else:
-            self.target_model = self.policy.model
 
         self.optimizer = make_optim(self.policy.model, self.config)
 
@@ -47,22 +47,28 @@ class DQNAgent(Agent):
 
     def update(self, buffer, rngs):
         # batches_per_epoch = buffer.size // self.config.batch_size
+        agent_data = {'errors': []}
         for _ in range(self.config.n_epochs):
             states, actions, rewards, next_states, discounts, idxs = buffer.sample_batch(self.config.batch_size, rngs())
             next_actions, _ = self.policy(next_states, rngs())
-            next_values = self.model_out(self.target_model, next_states, rngs())
-            print(jnp.unique(next_actions, return_counts=True))
+            target_model = self.target_model if self.config.ddqn else self.policy.model
+            next_values = self.model_out(target_model, next_states, rngs())
             greedy_values = select_actions(next_values, next_actions)
-            targets = self.targets_fn(rewards, discounts, greedy_values)
 
-            errors = self.train_step(self.policy.model, self.optimizer, targets, states, actions, rngs(), self.loss_fn)
+            targets = self.targets_fn(rewards, discounts, greedy_values)
+            errors = self.train_step(self.policy.model, self.optimizer, targets, states,
+                                     actions, rngs(), self.loss_fn)
             # Priority replay
             buffer.update_priorities(idxs, errors)
 
-            # DDQN
-            new_target_params = optax.incremental_update(nnx.state(self.policy.model), nnx.state(self.target_model),
-                                                         self.config.polyak_tau)
-            nnx.update(self.target_model, new_target_params)
+            agent_data['errors'].append(jnp.mean(jnp.abs(errors)))
+
+            if self.config.ddqn:
+                new_target_params = optax.incremental_update(nnx.state(self.policy.model), nnx.state(self.target_model),
+                                                             self.config.polyak_tau)
+                nnx.update(self.target_model, new_target_params)
+
+        return agent_data
 
     def behavioral_policy(self):
         if self.config.noisy_nets:

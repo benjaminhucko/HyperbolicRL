@@ -64,12 +64,15 @@ class PPOAgent(Agent):
             value_loss = jnp.mean(optax.squared_error(values.squeeze(), returns))
 
             loss = policy_loss - regularization * entropy_loss + value_weight * value_loss
-            return loss
-        print("GETTING GRADS")
-        grads = nnx.grad(ppo_loss)(model)
-        print("RECIEVED GRADS")
+            return loss, {'policy_loss': policy_loss, 'value_loss': value_loss}
+
+        (loss, aux), grads = nnx.value_and_grad(ppo_loss, has_aux=True)(model)
         optimizer.update(model, grads)  # in-place updates
-        return {}
+
+        if hasattr(model, 'manifold'):
+            aux['curvature'] = model.manifold.curvature()
+        aux['loss'] = loss
+        return aux
 
     def update(self, buffer, rng):
         obs, actions, rewards, dones, log_probs, values, final_obs = buffer.get()
@@ -88,17 +91,24 @@ class PPOAgent(Agent):
         actions = jnp.reshape(actions, -1)
         log_probs = jnp.reshape(log_probs, -1)
         epoch_size = obs.shape[0]
+        stats = None
         for _ in range(self.config.n_epochs):
             epoch_indices = jax.random.permutation(rng(), epoch_size, independent=True)
             for start_idx in range(0, epoch_size, self.config.batch_size):
                 end_idx = start_idx + self.config.batch_size
                 idxs = epoch_indices[start_idx:end_idx]
-                start_time = time.time()
-                self.train_step(self.policy.model, self.optimizer, returns[idxs], advantages[idxs],
-                                obs[idxs], actions[idxs], log_probs[idxs],
-                                self.config.clip_threshold, self.config.entorpy_weight,
-                                self.config.value_weight)
-                print('Updated batch in: ', time.time() - start_time)
+                aux = self.train_step(self.policy.model, self.optimizer, returns[idxs], advantages[idxs],
+                                      obs[idxs], actions[idxs], log_probs[idxs],
+                                      self.config.clip_threshold, self.config.entorpy_weight,
+                                      self.config.value_weight)
+
+                if stats is None:
+                    stats = aux
+                else:
+                    for k, v in aux.items():
+                        stats[k] = jnp.concatenate((stats[k], v), axis=None)
+
+        return stats
 
     def behavioral_policy(self):
         return self.policy

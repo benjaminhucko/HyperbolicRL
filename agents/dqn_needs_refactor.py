@@ -3,6 +3,8 @@ from functools import partial
 import jax
 import jax.numpy as jnp
 import optax
+import rlax
+from babel import support
 from flax import nnx
 from jax import vmap
 
@@ -14,49 +16,24 @@ def batch_project(projected_from, weights, projected_to):
     l = jnp.floor(b).astype(jnp.int32)
     u = l + 1
 
-    l = jnp.clip(l, 0, N - 1)
-    u = jnp.clip(u, 0, N - 1)
+    l_index = jnp.clip(l, 0, N - 1)
+    u_index = jnp.clip(u, 0, N - 1)
     batch_idx = jnp.arange(B)[:, None]
 
     m = jnp.zeros_like(projected_from)
-    m = m.at[batch_idx, l].add(weights * (u - b))
-    m = m.at[batch_idx, u].add(weights * (b - l))
+    m = m.at[batch_idx, l_index].add(weights * (u - b))
+    m = m.at[batch_idx, u_index].add(weights * (b - l))
 
-    # jax.debug.print('dz: {dz}, b: {b}, u: {u}, l: {l}, m {m}, sum {s}, w {w}', dz=delta_z, b=b[:5], u=u[:5], l=l[:5], m=m[:5], s=m.sum(-1), w=weights[:5])
     return m
 
-def project_distribution2(projected_from, weights, projected_to):
-    v_min, v_max = projected_to[0], projected_to[-1]
-    N = projected_to.shape[0]
-    delta_z = (v_max - v_min) / (N - 1)
-    b = (projected_from - v_min) / delta_z
-    l = jnp.floor(b).astype(jnp.int32)
-    u = l + 1
-
-    l = jnp.clip(l, 0, N - 1)
-    u = jnp.clip(u, 0, N - 1)
-
-    m = jnp.zeros_like(projected_from)
-    m = m.at[l].add(weights * (u - b))
-    m = m.at[u].add(weights * (b - l))
-    # jax.debug.print('dz: {dz}, b: {b}, u: {u}, l: {l}, m {m}, sum {s}, w {w}', dz=delta_z, b=b[:5], u=u[:5], l=l[:5], m=m[:5], s=m_sum, w=weights[:5])
-    return m
-
+# THIS OKAY
 def select_actions(values, actions):
     greedy_values = jnp.take_along_axis(values,
                                         jnp.expand_dims(actions, axis=tuple(range(1, values.ndim))),
                                         axis=1).squeeze()
     return greedy_values
 
-def project_distribution(projected_from, weights, projected_to):
-    v_min, v_max = projected_to[0], projected_to[-1]
-    N = projected_to.shape[0]
-    delta_z = (v_max - v_min) / (N - 1)
-    distance = jnp.abs(projected_from[:, None] - projected_to[None, :])
-    contribution = jnp.clip(1 - distance / delta_z, 0.0, 1.0)
-    projected = jnp.sum(contribution * weights[:, None], axis=0)
-    projected /= jnp.sum(projected)
-    return projected
+# loss functions
 
 def q_loss_fn(actual, targets):
     td_errors = actual - targets
@@ -64,13 +41,15 @@ def q_loss_fn(actual, targets):
     return loss, jnp.abs(td_errors)
 
 def categorical_loss_fn(actual, targets):
+    # support = jnp.linspace(-10, 10, num=51)
+    #
+    # jax.debug.print('targets {t}, actual {a}', t=(targets @ support)[0],
+    #                 a=(nnx.softmax(actual) @ support)[0])
     errors = optax.softmax_cross_entropy(actual, targets)
-    # errors = (-targets * jnp.log(actual)).sum(axis=1)
     loss = jnp.mean(errors)
     return loss, errors
 
-def direct_model_post(out):
-    return out
+# POST PROCESSING ON OUTPUT
 
 def duelling_model_post(out):
     advantages, values = out
@@ -93,6 +72,7 @@ def direct_dist_model_post(out, atoms, logits):
         post_out = nnx.softmax(post_out, axis=-1)
     return post_out
 
+# ------------------------
 def get_loss(model, observations, actions, targets, key, model_output_fn, loss_fn):
     actual = model_output_fn(model, observations, key)
     selected_actual = select_actions(actual, actions)
@@ -139,9 +119,10 @@ def make_loss_fn(config):
 def distributional_targets_fn(rewards, discounts, target_prob_distribution, support):
     v_min, v_max = support[0], support[-1]
 
-    target_support = rewards[:, None] + jnp.outer(discounts, support)
+    target_support = rewards[:, None] + discounts[:, None] * support[None, :]
     target_support = jnp.clip(target_support, v_min, v_max)
     targets = batch_project(target_support, target_prob_distribution, support)
+
     return targets
 
 def classic_targets_fn(rewards, discounts, greedy_targets):

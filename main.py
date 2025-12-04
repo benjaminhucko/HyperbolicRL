@@ -8,7 +8,7 @@ from agents.agent_factory import make_agent
 from agents.random_policy import RandomPolicy
 from buffer import make_buffer
 from config import get_config
-from environment import make_env
+from environment import make_env, visualize_performance
 from logger import Logger
 
 @nnx.jit(static_argnames=['n_steps'])
@@ -41,21 +41,18 @@ def train_agent(env, config):
         buffer = buffer.add_data(*data)
 
     for update_idx in tqdm(range(config.num_updates)):
-        start_time = time.time()
         next_obs, data = run_episode(agent.behavioral_policy(), env, next_obs, config.update_every, rngs())
-        print(f'Episode {update_idx} finished in {time.time() - start_time} seconds')
         buffer = buffer.add_data(*data, next_obs)
-        start_time = time.time()
-        agent.update(buffer, rngs)
-        print(f'agent updated {update_idx} finished in {time.time() - start_time} seconds')
-        logger.log(data)
+        stats = agent.update(buffer, rngs)
+        logger.log(data, stats)
     return agent
 
 def main():
     config = get_config()
-
-    env = make_env(config.env_name, config.num_envs)
+    obs_shape = 'channel_first' if config.geometry == 'hyperbolic' else 'channel_last'
+    env = make_env(config.env_name, config.num_envs, obs_shape)
     agent = train_agent(env, config)
+    visualize_performance(config.env_name, agent.policy, jax.random.PRNGKey(config.seed), obs_shape, config)
 
 if __name__ == '__main__':
     main()

@@ -14,7 +14,7 @@ class Logger:
         self.config = config
         self.step = 0
 
-        self.logged_keys = [
+        self.env_keys = [
             "episode_length",
             "episode_return",
             "average_reward",
@@ -23,13 +23,9 @@ class Logger:
     def publish(self, logged_data):
         for key, value in logged_data.items():
             self.writer.add_scalar(f"train/{key}", value, self.step)
-        self.writer.flush()
 
-
-
-    def log(self, data):
-        self.step += 1
-        logged_data = {key: 0 for key in self.logged_keys}
+    def log_env(self, data):
+        logged_data = {key: 0 for key in self.env_keys}
         batched_rewards, batched_dones = data[2], data[4]
 
         def traverse_data(carry, state):
@@ -55,6 +51,19 @@ class Logger:
         logged_data['episode_return'] = jnp.sum(emitted_return) / jnp.sum(batched_dones)
         logged_data['average_reward'] = jnp.mean(batched_rewards)
         self.publish(logged_data)
+
+    def log_agent(self, data):
+        for key in data.keys():
+            data[key] = sum(data[key]) / len(data[key])
+        self.publish(data)
+
+    def log(self, env_data, agent_data=None):
+        self.step += 1
+        self.log_env(env_data)
+        self.log_agent(agent_data)
+        self.writer.flush()
+
+
 
 
 

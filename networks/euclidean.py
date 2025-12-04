@@ -4,7 +4,7 @@ import jax
 import jax.numpy as jnp
 from flax import nnx
 
-def activation_fn_factory(activation_name):
+def euclidean_activation_fn_factory(activation_name):
     if activation_name == 'relu':
         return nnx.relu
     elif activation_name == 'elu':
@@ -14,11 +14,23 @@ def activation_fn_factory(activation_name):
     else:
         raise ValueError(f'Unknown activation function {activation_name}')
 
+class ImpalaResidualBlock(nnx.Module):
+    def __init__(self, num_filters, cnn_args):
+        super().__init__()
+        self.conv1 = nnx.Conv(num_filters, num_filters, **cnn_args)
+        self.conv2 = nnx.Conv(num_filters, num_filters, **cnn_args)
+        self.activation_fn = euclidean_activation_fn_factory('relu')
+
+    def __call__(self, x):
+        out = self.activation_fn(self.conv1(x))
+        out = self.activation_fn(self.conv2(out))
+        return x + out
+
 class CNN(nnx.Module):
     def __init__(self, in_channels, out_channels, rngs, config):
         super().__init__()
         cnn_args = {'kernel_size': config.kernel_size, 'strides': config.stride, 'rngs': rngs}
-        self.activation_fn = activation_fn_factory(config.activation)
+        self.activation_fn = euclidean_activation_fn_factory(config.activation)
         layers = []
         if config.n_conv == 1:
             layers.append(nnx.Conv(in_channels, out_channels, **cnn_args))
@@ -39,7 +51,7 @@ class CNN(nnx.Module):
 
 class MLP(nnx.Module):
     def __init__(self, in_channels, out_channels, rngs, config):
-        self.activation_fn = activation_fn_factory(config.activation)
+        self.activation_fn = euclidean_activation_fn_factory(config.activation)
         linear_layer_cls = get_linear_class(config)
         self.noisy = config.noisy_nets
         layers = []
@@ -79,14 +91,13 @@ class ActorCritic(nnx.Module):
         self.atoms = config.atoms
         self.feature_extractor = CNN(in_channels, config.hidden_channels, rngs, config)
 
-        self.activation_fn = activation_fn_factory(config.activation)
+
         self.actor = MLP(config.hidden_channels * 100, n_actions * self.atoms, rngs, config)
         self.critic = MLP(config.hidden_channels * 100, self.atoms, rngs, config)
 
     def __call__(self, x, key=None):
         features = self.feature_extractor(x)
         features = features.reshape(features.shape[0], -1)
-        features = self.activation_fn(features)
         actor = self.actor(features, key)
         critic = self.critic(features, key)
 
@@ -97,12 +108,10 @@ class Critic(nnx.Module):
         self.atoms = config.atoms
 
         self.feature_extractor = CNN(in_channels, config.hidden_channels, rngs, config)
-        self.activation_fn = activation_fn_factory(config.activation)
         self.mlp = MLP(config.hidden_channels * 100, n_actions * self.atoms, rngs, config)
 
     def __call__(self, x, key=None):
         x = self.feature_extractor(x)
-        x = self.activation_fn(x)
         x = x.reshape((x.shape[0], -1))
         x = self.mlp(x, key)
         return x
