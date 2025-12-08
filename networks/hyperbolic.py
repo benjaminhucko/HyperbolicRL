@@ -48,7 +48,6 @@ class HMLP(nnx.Module):
 
         mlp_args = {'manifold': manifold, 'rngs': rngs}
         self.layers = nnx.List()
-        self.analyze = config.analyze
 
         if config.n_linear == 1:
             self.layers.append(HLinear(in_channels, out_channels, **mlp_args))
@@ -59,12 +58,12 @@ class HMLP(nnx.Module):
             self.layers.extend(hidden_layers)
             self.layers.append(HLinear(config.hidden_channels, out_channels, **mlp_args))
 
-    def __call__(self, x, key=None):
+    def __call__(self, x, key=None, analyze=False):
         for layer in self.layers[:-1]:
             features = layer(x)
             x = self.activation_fn(features)
         out = self.layers[-1](x)
-        if self.analyze:
+        if analyze:
             return out, features
 
         return out
@@ -73,7 +72,6 @@ class HNoisyMLP(nnx.Module):
     def __init__(self, in_channels, out_channels, manifold, rngs, config):
         self.activation_fn = hyperbolic_activation_fn_factory(config.activation)
         mlp_args = {'manifold': manifold, 'rngs': rngs, 'config': config}
-        self.analyze = config.analyze
 
         self.layers = nnx.List()
         if config.n_linear == 1:
@@ -85,14 +83,14 @@ class HNoisyMLP(nnx.Module):
             self.layers.extend(hidden_layers)
             self.layers.append(HNoisyLinear(config.hidden_channels, out_channels, **mlp_args))
 
-    def __call__(self, x, layer_key):
+    def __call__(self, x, layer_key, analyze=False):
         keys = jax.random.split(layer_key, len(self.layers))
         for layer, key in zip(self.layers[:-1], keys[:-1]):
             features = layer(x, key)
             x = self.activation_fn(features)
         out = self.layers[-1](x, keys[-1])
 
-        if self.analyze:
+        if analyze:
             return out, features
         return out
 
@@ -140,7 +138,6 @@ class HActorCritic(nnx.Module):
     def __init__(self, in_channels, n_actions, manifold, rngs, config):
         self.atoms = config.atoms
         self.manifold = manifold
-        self.analyze = config.analyze
 
         self.feature_extractor = HImpalaFeatureExtractor(in_channels, config.hidden_channels, self.manifold, rngs, config)
         # self.feature_extractor = HCNN(in_channels, config.hidden_channels, manifold, rngs, config)
@@ -151,14 +148,15 @@ class HActorCritic(nnx.Module):
         self.actor = mlp(config.hidden_channels * 100, n_actions * actor_atoms, self.manifold, rngs, config)
         self.critic = mlp(config.hidden_channels * 100, critic_atoms, self.manifold, rngs, config)
 
-    def __call__(self, x, key=None):
+    def __call__(self, x, key=None, analyze=False):
         x = self.manifold.expmap(x, axis=1)
         x = ManifoldArray(x, self.manifold)
         x = self.feature_extractor(x)
         features = x.flatten(manifold_axis=1)
-        actor = self.actor(features, key)
-        critic = self.critic(features, key)
-        if self.analyze:
+        actor = self.actor(features, key, analyze)
+        critic = self.critic(features, key, analyze)
+
+        if analyze:
             return actor[0].data, critic[0].data, {'visual': features.data, 'actor': actor[1].data,
                                                    'critic': critic[1].data}
 
@@ -168,19 +166,19 @@ class HCritic(nnx.Module):
     def __init__(self, in_channels, n_actions, manifold, rngs, config):
         self.atoms = config.atoms
         self.manifold = manifold
-        self.analyze = config.analyze
 
         self.feature_extractor = HImpalaFeatureExtractor(in_channels, config.hidden_channels, manifold, rngs, config)
         mlp = HMLP if not config.noisy_nets else HNoisyMLP
         self.mlp = mlp(config.hidden_channels * 100, n_actions * self.atoms, manifold, rngs, config)
 
-    def __call__(self, x, key=None):
+    def __call__(self, x, key=None, analyze=False):
         x = self.manifold.expmap(x, axis=1)
         x = ManifoldArray(data=x, manifold=self.manifold)
         x = self.feature_extractor(x)
         features = x.flatten(manifold_axis=1)
-        x = self.mlp(features, key)
-        if self.analyze:
+        x = self.mlp(features, key, analyze)
+
+        if analyze:
             return x[0].data, {'visual': features.data, 'critic': x[1].data}
 
         return x.data

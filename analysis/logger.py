@@ -8,7 +8,7 @@ import jax.numpy as jnp
 
 class Logger:
     def __init__(self, config):
-        self.writer = SummaryWriter(logdir=f"./logs/{config.env_name}/{config.strategy}/{config.geometry}/"
+        self.writer = SummaryWriter(logdir=f"./analysis/logs/{config.env}/{config.strategy}/{config.geometry}/"
                                            f"log_{int(time.time())}")
         self.cached_episode_length = jnp.zeros(config.num_envs)
         self.cached_episode_return = jnp.zeros(config.num_envs)

@@ -16,7 +16,7 @@ def parse_args():
 
     # Setup args
     parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--env-name', type=str, default='breakout',
+    parser.add_argument('--env', type=str, default='breakout',
                         choices=['asterix', 'breakout', 'freeway', 'seaquest', 'space_invaders'])
     parser.add_argument('--strategy', type=str, default='ppo')
     parser.add_argument('--num-envs', type=int, default=16)
@@ -24,7 +24,7 @@ def parse_args():
     # Update frequency args
     parser.add_argument('--update-after', type=int, default=100)
     parser.add_argument('--update-every', type=int, default=100)
-    parser.add_argument('--updates', type=int, default=300)
+    parser.add_argument('--updates', type=int, default=200)
 
     # PPO args
     parser.add_argument('--gamma', type=float, default=0.99)
@@ -73,7 +73,6 @@ def parse_args():
 
     parser.add_argument('--visualize', action='store_true')
     parser.add_argument('--analyze', action='store_true')
-
     return parser.parse_args()
 
 def apply_rainbow_flags(config):

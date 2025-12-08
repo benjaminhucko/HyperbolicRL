@@ -73,9 +73,7 @@ class CNN(nnx.Module):
 class MLP(nnx.Module):
     def __init__(self, in_channels, out_channels, rngs, config):
         self.activation_fn = euclidean_activation_fn_factory(config.activation)
-        self.noisy = config.noisy_nets
         self.layers = nnx.List()
-        self.analyze = config.analyze
 
         if config.n_linear == 1:
             self.layers.append(nnx.Linear(in_channels, out_channels, rngs=rngs))
@@ -86,20 +84,19 @@ class MLP(nnx.Module):
             self.layers.extend(hidden_layers)
             self.layers.append(nnx.Linear(config.hidden_channels, out_channels, rngs=rngs))
 
-    def __call__(self, x, key=None):
+    def __call__(self, x, key=None, analyze=False):
         for layer in self.layers[:-1]:
             features = layer(x)
             x = self.activation_fn(features)
         out = self.layers[-1](x)
 
-        if self.analyze:
+        if analyze:
             return out, features
         return out
 
 class NoisyMLP(nnx.Module):
     def __init__(self, in_channels, out_channels, rngs, config):
         self.activation_fn = euclidean_activation_fn_factory(config.activation)
-        self.analyze = config.analyze
 
         self.layers = nnx.List()
         mlp_args = {'rngs': rngs, 'config': config}
@@ -113,7 +110,7 @@ class NoisyMLP(nnx.Module):
             self.layers.extend(hidden_layers)
             self.layers.append(NoisyLinear(config.hidden_channels, out_channels, **mlp_args))
 
-    def __call__(self, x, layer_key):
+    def __call__(self, x, layer_key, analyze=False):
         keys = jax.random.split(layer_key, len(self.layers))
         for layer, key in zip(self.layers[:-1], keys[:-1]):
             features = layer(x, key)
@@ -121,7 +118,7 @@ class NoisyMLP(nnx.Module):
 
         out = self.layers[-1](x, keys[-1])
 
-        if self.analyze:
+        if analyze:
             return out, features
 
         return out
@@ -167,16 +164,13 @@ class ActorCritic(nnx.Module):
         self.actor = mlp(config.hidden_channels * 100, n_actions * actor_atoms, rngs, config)
         self.critic = mlp(config.hidden_channels * 100, critic_atoms, rngs, config)
 
-        self.analyze = nnx.static(config.analyze)
-
-
-    def __call__(self, x, key=None):
+    def __call__(self, x, key=None, analyze=False):
         features = self.feature_extractor(x)
         features = features.reshape(features.shape[0], -1)
-        actor = self.actor(features, key)
-        critic = self.critic(features, key)
+        actor = self.actor(features, key, analyze)
+        critic = self.critic(features, key, analyze)
 
-        if self.analyze:
+        if analyze:
             return actor[0], critic[0], {'visual': features, 'actor': actor[1], 'critic': critic[1]}
 
         return actor, critic
@@ -184,16 +178,14 @@ class ActorCritic(nnx.Module):
 class Critic(nnx.Module):
     def __init__(self, in_channels, n_actions, rngs, config):
         self.atoms = config.atoms
-        self.analyze = config.analyze
-
         self.feature_extractor = CNN(in_channels, config.hidden_channels, rngs, config)
         mlp = MLP if not config.noisy_nets else NoisyMLP
         self.mlp = mlp(config.hidden_channels * 100, n_actions * self.atoms, rngs, config)
 
-    def __call__(self, x, key=None):
+    def __call__(self, x, key=None, analyze=False):
         x = self.feature_extractor(x)
         features = x.reshape((x.shape[0], -1))
-        x = self.mlp(features, key)
-        if self.analyze:
+        x = self.mlp(features, key, analyze)
+        if analyze:
             return x[0], {'visual': features, 'critic': x[1]}
         return x

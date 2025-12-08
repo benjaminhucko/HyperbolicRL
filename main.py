@@ -1,15 +1,14 @@
-import time
-
 import jax
 from flax import nnx
 from tqdm import tqdm
 
 from agents.agent_factory import make_agent
 from agents.random_policy import RandomPolicy
+from analysis.analyzer import Analyzer
 from buffer import make_buffer
 from config import get_config
 from environment import make_env, visualize_performance
-from logger import Logger
+from analysis.logger import Logger
 
 @nnx.jit(static_argnames=['n_steps'])
 def run_episode(policy, init_env, first_obs, n_steps: int, key):
@@ -31,6 +30,8 @@ def sample_init_data(burn_in_key, env, env_init_obs, config):
 
 def train_agent(env, config):
     logger = Logger(config)
+    analyzer = Analyzer(config)
+
     rngs = nnx.Rngs(config.seed)
     obs_shape, n_actions = env.observation_shape(), env.action_space().n
     n_channels = obs_shape[-1] if config.geometry != 'hyperbolic' else obs_shape[0]
@@ -44,16 +45,22 @@ def train_agent(env, config):
     for update_idx in tqdm(range(config.updates)):
         next_obs, data = run_episode(agent.behavioral_policy(), env, next_obs, config.update_every, rngs())
         buffer = buffer.add_data(*data, next_obs)
-        stats = agent.update(buffer, rngs)
+        stats = agent.update(buffer, rngs, analyzer.analyze_grads())
+        if config.analyze:
+            analyzer.step(stats)
+
         logger.log(data, stats)
+    if config.analyze:
+        analyzer.plot_all()
+
     return agent
 
 def main():
     config = get_config()
     obs_shape = 'channel_first' if config.geometry == 'hyperbolic' else 'channel_last'
-    env = make_env(config.env_name, config.num_envs, obs_shape)
+    env = make_env(config.env, config.num_envs, obs_shape)
     agent = train_agent(env, config)
-    visualize_performance(config.env_name, agent.policy, jax.random.PRNGKey(config.seed), obs_shape, config)
+    visualize_performance(config.env, agent.policy, jax.random.PRNGKey(config.seed), obs_shape, config)
 
 if __name__ == '__main__':
     main()

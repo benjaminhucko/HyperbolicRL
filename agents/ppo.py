@@ -1,4 +1,5 @@
 import time
+from collections import defaultdict
 from functools import partial
 
 import distrax
@@ -7,9 +8,10 @@ import optax
 import jax.numpy as jnp
 import rlax
 from flax import nnx
+from flax.nnx import vmap
 
 from agents.agent import Agent
-from analysis.gradient_logger import Analyzer
+from analysis.analyzer import Analyzer
 from networks.euclidean import ActorCritic
 from networks.factory import make_network, make_optim
 from optimization.loss import hl_gauss_transform
@@ -61,7 +63,6 @@ class PPOAgent(Agent):
 
         self.policy = PPOPolicy(n_channels, n_actions, self.post_fn, rngs, config)
         self.optimizer = make_optim(self.policy.model, config)
-        self.analyzer = Analyzer()
 
     @staticmethod
     @nnx.jit
@@ -79,11 +80,14 @@ class PPOAgent(Agent):
         return advantages
 
     @staticmethod
-    @nnx.jit(static_argnames=['value_loss_fn'])
+    @nnx.jit(static_argnames=['value_loss_fn', 'clip_threshold', 'value_weight', 'regularization',
+                              'analyze', 'eval_grads'])
     def train_step(model, optimizer, returns, advantages, observations, actions, old_log_probs,
-                   clip_threshold, regularization, value_weight, value_loss_fn):
+                   clip_threshold, regularization, value_weight, value_loss_fn,
+                   analyze=False, eval_grads=False):
         def ppo_loss(model):
-            action_logits, values = model(observations, None)
+            out = model(observations, None, analyze=analyze)
+            action_logits, values = out[0], out[1]
 
             policy = distrax.Categorical(action_logits)
             log_probs = policy.log_prob(actions)
@@ -94,18 +98,24 @@ class PPOAgent(Agent):
             entropy_loss = jnp.mean(policy.entropy())
             value_loss = value_loss_fn(values, returns)
             loss = policy_loss - regularization * entropy_loss + value_weight * value_loss
-            return loss, {'policy_loss': policy_loss, 'value_loss': value_loss}
+
+            aux = {'policy_loss': policy_loss, 'value_loss': value_loss}
+            if analyze:
+                aux['embeddings'] = out[2]
+            return loss, aux
 
         (loss, aux), grads = nnx.value_and_grad(ppo_loss, has_aux=True)(model)
+        if eval_grads:
+            return grads
+
         optimizer.update(model, grads)  # in-place updates
 
         if hasattr(model, 'manifold'):
             aux['curvature'] = model.manifold.curvature()
         aux['loss'] = loss
-        aux['grads'] = grads
         return aux
 
-    def update(self, buffer, rng):
+    def update(self, buffer, rng, grad_analysis=False):
         obs, actions, rewards, dones, log_probs, values, final_obs = buffer.get()
         _, final_value = self.policy.model(final_obs, rng())
         final_value = self.post_fn(final_value).squeeze()
@@ -121,8 +131,10 @@ class PPOAgent(Agent):
         actions = jnp.reshape(actions, -1)
         log_probs = jnp.reshape(log_probs, -1)
         epoch_size = obs.shape[0]
-        stats = None
+        stats = defaultdict(list)
         for _ in range(self.config.epochs):
+            stats = defaultdict(list)
+
             epoch_indices = jax.random.permutation(rng(), epoch_size, independent=True)
             for start_idx in range(0, epoch_size, self.config.batch_size):
                 end_idx = start_idx + self.config.batch_size
@@ -130,17 +142,23 @@ class PPOAgent(Agent):
                 aux = self.train_step(self.policy.model, self.optimizer, returns[idxs], advantages[idxs],
                                       obs[idxs], actions[idxs], log_probs[idxs],
                                       self.config.clip_threshold, self.config.entorpy_weight,
-                                      self.config.value_weight, self.value_loss_fn)
-                grads = aux.pop('grads')
-                # self.analyzer.step(grads)
+                                      self.config.value_weight, self.value_loss_fn,
+                                      analyze=self.config.analyze)
 
+                stats = Analyzer.append(stats, aux)
 
-                if stats is None:
-                    stats = aux
-                else:
-                    for k, v in aux.items():
-                        stats[k] = jnp.concatenate((stats[k], v), axis=None)
+        if grad_analysis:
+            obs, actions, log_probs, advantages \
+                = (jnp.expand_dims(val, axis=1) for val in [obs, actions, log_probs, advantages])
+            for idx in range(epoch_size):
+                grads = self.train_step(self.policy.model, self.optimizer, returns[idx], advantages[idx],
+                                        obs[idx], actions[idx], log_probs[idx],
+                                        self.config.clip_threshold, self.config.entorpy_weight,
+                                        self.config.value_weight, self.value_loss_fn,
+                                        analyze=False, eval_grads=True)
 
+                batch_grads = Analyzer.process_raw_grads(grads)
+                stats = Analyzer.append(stats, {'grads': batch_grads})
         return stats
 
     def behavioral_policy(self):
