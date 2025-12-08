@@ -52,13 +52,15 @@ class HyperActorCritic(nnx.Module):
         self.atoms = config.atoms
         self.feature_extractor = HyperEuclideanPart(in_channels, config.hidden_features, rngs, config)
 
+        actor_atoms = self.atoms if config.categorical_actor else 1
+        critic_atoms = self.atoms
         if config.baseline:
-            self.actor = MLP(config.hidden_features, n_actions * self.atoms, rngs, config)
-            self.critic = MLP(config.hidden_features, self.atoms, rngs, config)
+            self.actor = MLP(config.hidden_features, n_actions * actor_atoms, rngs, config)
+            self.critic = MLP(config.hidden_features, critic_atoms, rngs, config)
         else:
             self.manifold = manifold
-            self.actor = HMLP(config.hidden_features, n_actions * self.atoms, self.manifold, rngs, config)
-            self.critic = HMLP(config.hidden_features, self.atoms, self.manifold, rngs, config)
+            self.actor = HMLP(config.hidden_features, n_actions * actor_atoms, self.manifold, rngs, config)
+            self.critic = HMLP(config.hidden_features, critic_atoms, self.manifold, rngs, config)
         self.project = not config.baseline
 
     def __call__(self, x, key=None):

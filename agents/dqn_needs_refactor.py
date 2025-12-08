@@ -8,23 +8,8 @@ from babel import support
 from flax import nnx
 from jax import vmap
 
-def batch_project(projected_from, weights, projected_to):
-    v_min, v_max = projected_to[0], projected_to[-1]
-    B, N = projected_from.shape
-    delta_z = (v_max - v_min) / (N - 1)
-    b = (projected_from - v_min) / delta_z
-    l = jnp.floor(b).astype(jnp.int32)
-    u = l + 1
+from optimization.loss import c51_targets
 
-    l_index = jnp.clip(l, 0, N - 1)
-    u_index = jnp.clip(u, 0, N - 1)
-    batch_idx = jnp.arange(B)[:, None]
-
-    m = jnp.zeros_like(projected_from)
-    m = m.at[batch_idx, l_index].add(weights * (u - b))
-    m = m.at[batch_idx, u_index].add(weights * (b - l))
-
-    return m
 
 # THIS OKAY
 def select_actions(values, actions):
@@ -41,10 +26,6 @@ def q_loss_fn(actual, targets):
     return loss, jnp.abs(td_errors)
 
 def categorical_loss_fn(actual, targets):
-    # support = jnp.linspace(-10, 10, num=51)
-    #
-    # jax.debug.print('targets {t}, actual {a}', t=(targets @ support)[0],
-    #                 a=(nnx.softmax(actual) @ support)[0])
     errors = optax.softmax_cross_entropy(actual, targets)
     loss = jnp.mean(errors)
     return loss, errors
@@ -116,14 +97,6 @@ def make_loss_fn(config):
         loss_fn = q_loss_fn
     return partial(get_loss, model_output_fn=model_output_fn, loss_fn=loss_fn)
 
-def distributional_targets_fn(rewards, discounts, target_prob_distribution, support):
-    v_min, v_max = support[0], support[-1]
-
-    target_support = rewards[:, None] + discounts[:, None] * support[None, :]
-    target_support = jnp.clip(target_support, v_min, v_max)
-    targets = batch_project(target_support, target_prob_distribution, support)
-
-    return targets
 
 def classic_targets_fn(rewards, discounts, greedy_targets):
     targets = rewards + discounts * greedy_targets
@@ -132,7 +105,7 @@ def classic_targets_fn(rewards, discounts, greedy_targets):
 def make_targets_fn(config, support):
     if config.distributional:
         # targets = jnp.interp(self.support, target_support, target_prob_distribution)
-        targets_fn = partial(distributional_targets_fn, support=support)
+        targets_fn = partial(c51_targets, support=support)
     else:
         targets_fn = classic_targets_fn
     return targets_fn

@@ -12,8 +12,10 @@ class HybActorCritic(nnx.Module):
         self.manifold = manifold
         self.feature_extractor = CNN(in_channels, config.hidden_channels, rngs, config)
 
-        self.actor = HMLP(config.hidden_channels * 100, n_actions * self.atoms, self.manifold, rngs, config)
-        self.critic = HMLP(config.hidden_channels * 100, self.atoms, self.manifold, rngs, config)
+        actor_atoms = self.atoms if config.categorical_actor else 1
+        critic_atoms = self.atoms
+        self.actor = HMLP(config.hidden_channels * 100, n_actions * actor_atoms, self.manifold, rngs, config)
+        self.critic = HMLP(config.hidden_channels * 100, critic_atoms, self.manifold, rngs, config)
 
     def __call__(self, x, key=None):
         x = self.feature_extractor(x)

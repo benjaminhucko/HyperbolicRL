@@ -9,23 +9,22 @@ def parse_args():
                         default='euclidean')
     parser.add_argument('--learn-curvature', action='store_true')
 
-
     # Hyper papers replication
     parser.add_argument('--hyper', action='store_true')
     parser.add_argument('--hyperpp', action='store_true')
     parser.add_argument('--baseline', action='store_true')
 
-
     # Setup args
     parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--env-name', type=str, default='Breakout-MinAtar')
+    parser.add_argument('--env-name', type=str, default='breakout',
+                        choices=['asterix', 'breakout', 'freeway', 'seaquest', 'space_invaders'])
     parser.add_argument('--strategy', type=str, default='ppo')
     parser.add_argument('--num-envs', type=int, default=16)
 
     # Update frequency args
     parser.add_argument('--update-after', type=int, default=100)
     parser.add_argument('--update-every', type=int, default=100)
-    parser.add_argument('--num-updates', type=int, default=300)
+    parser.add_argument('--updates', type=int, default=300)
 
     # PPO args
     parser.add_argument('--gamma', type=float, default=0.99)
@@ -52,11 +51,11 @@ def parse_args():
     parser.add_argument('--v-max', type=float, default=10)
 
     # Convergence args
-    parser.add_argument('--learning_rate', type=float, default=1e-3)
+    parser.add_argument('--lr', type=float, default=1e-3)
 
-    parser.add_argument('--n-epochs', type=int, default=20)
+    parser.add_argument('--epochs', type=int, default=5)
     parser.add_argument('--batch-size', type=int, default=256)
-    parser.add_argument('--activation', type=str, default='elu')
+    parser.add_argument('--activation', type=str, default='relu')
     parser.add_argument('--epsilon', type=float, default=0.2)
 
     ## CNN
@@ -73,7 +72,7 @@ def parse_args():
     parser.add_argument('--n-linear', type=int, default=2)
 
     parser.add_argument('--visualize', action='store_true')
-
+    parser.add_argument('--analyze', action='store_true')
 
     return parser.parse_args()
 
@@ -94,14 +93,12 @@ def apply_rainbow_flags(config):
 
     if not config.n_td:
         config.n_steps = 0
-    if not config.distributional:
-        config.atoms = 1
 
     if config.noisy_nets:
         config.epsilon = 0
 
     if config.distributional:
-        config.learning_rate = 2.5e-4
+        config.categorical_actor = True
     return config
 
 
@@ -117,8 +114,15 @@ def apply_hyper_flags(config):
 
 def get_config():
     config = parse_args()
-    config = apply_rainbow_flags(config)
-    config = apply_hyper_flags(config)
+    config.categorical_actor = False
     config.sample_init = (config.strategy == 'dqn')
+
+    if config.strategy in ['dqn', 'rainbow']:
+        config = apply_rainbow_flags(config)
+    else:
+        config = apply_hyper_flags(config)
+
+    if not config.distributional:
+        config.atoms = 1
 
     return config

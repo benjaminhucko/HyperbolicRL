@@ -3,6 +3,8 @@ from functools import partial
 import jax
 import jax.numpy as jnp
 from flax import nnx
+from pyexpat import features
+
 
 def euclidean_activation_fn_factory(activation_name):
     if activation_name == 'relu':
@@ -15,16 +17,35 @@ def euclidean_activation_fn_factory(activation_name):
         raise ValueError(f'Unknown activation function {activation_name}')
 
 class ImpalaResidualBlock(nnx.Module):
-    def __init__(self, num_filters, cnn_args):
+    def __init__(self, num_filters, cnn_args, config):
         super().__init__()
         self.conv1 = nnx.Conv(num_filters, num_filters, **cnn_args)
         self.conv2 = nnx.Conv(num_filters, num_filters, **cnn_args)
-        self.activation_fn = euclidean_activation_fn_factory('relu')
+        self.activation_fn = euclidean_activation_fn_factory(config.activation)
 
     def __call__(self, x):
         out = self.activation_fn(self.conv1(x))
         out = self.activation_fn(self.conv2(out))
         return x + out
+
+class ImpalaFeatureExtractor(nnx.Module):
+    def __init__(self, in_channels, hidden_channels, rngs, config):
+        super().__init__()
+        cnn_args = {'kernel_size': config.kernel_size, 'strides': config.stride,
+                    'rngs': rngs}
+
+        self.activation_fn = euclidean_activation_fn_factory(config.activation)
+        # self.pool = HMaxPool2D()
+        self.conv = nnx.Conv(in_channels, hidden_channels, **cnn_args)
+        self.impala_layers = nnx.List([ImpalaResidualBlock(hidden_channels, cnn_args, config) for _ in range(2)])
+
+    def __call__(self, x):
+        x = self.conv(x)
+        # x = self.pool(x)
+        for layer in self.impala_layers:
+            x = layer(x)
+        x = self.activation_fn(x)
+        return x
 
 class CNN(nnx.Module):
     def __init__(self, in_channels, out_channels, rngs, config):
@@ -52,69 +73,59 @@ class CNN(nnx.Module):
 class MLP(nnx.Module):
     def __init__(self, in_channels, out_channels, rngs, config):
         self.activation_fn = euclidean_activation_fn_factory(config.activation)
-        linear_layer_cls = get_linear_class(config)
         self.noisy = config.noisy_nets
-        layers = []
+        self.layers = nnx.List()
+        self.analyze = config.analyze
+
         if config.n_linear == 1:
-            layers.append(linear_layer_cls(in_channels, out_channels, rngs=rngs))
+            self.layers.append(nnx.Linear(in_channels, out_channels, rngs=rngs))
         else:
-            layers.append(linear_layer_cls(in_channels, config.hidden_channels, rngs=rngs))
-            hidden_layers = [linear_layer_cls(config.hidden_channels, config.hidden_channels, rngs=rngs)
+            self.layers.append(nnx.Linear(in_channels, config.hidden_channels, rngs=rngs))
+            hidden_layers = [nnx.Linear(config.hidden_channels, config.hidden_channels, rngs=rngs)
                              for _ in range(config.n_linear - 2)]
-            layers.extend(hidden_layers)
-            layers.append(linear_layer_cls(config.hidden_channels, out_channels, rngs=rngs))
-        self.layers = nnx.List(layers)
+            self.layers.extend(hidden_layers)
+            self.layers.append(nnx.Linear(config.hidden_channels, out_channels, rngs=rngs))
 
-        self.forward = nnx.static(self.noisy_forward if config.noisy_nets else self.normal_forward)
+    def __call__(self, x, key=None):
+        for layer in self.layers[:-1]:
+            features = layer(x)
+            x = self.activation_fn(features)
+        out = self.layers[-1](x)
 
-    def noisy_forward(self, x, layer_key):
+        if self.analyze:
+            return out, features
+        return out
+
+class NoisyMLP(nnx.Module):
+    def __init__(self, in_channels, out_channels, rngs, config):
+        self.activation_fn = euclidean_activation_fn_factory(config.activation)
+        self.analyze = config.analyze
+
+        self.layers = nnx.List()
+        mlp_args = {'rngs': rngs, 'config': config}
+
+        if config.n_linear == 1:
+            self.layers.append(NoisyLinear(in_channels, out_channels, **mlp_args))
+        else:
+            self.layers.append(NoisyLinear(in_channels, config.hidden_channels, **mlp_args))
+            hidden_layers = [NoisyLinear(config.hidden_channels, config.hidden_channels, **mlp_args)
+                             for _ in range(config.n_linear - 2)]
+            self.layers.extend(hidden_layers)
+            self.layers.append(NoisyLinear(config.hidden_channels, out_channels, **mlp_args))
+
+    def __call__(self, x, layer_key):
         keys = jax.random.split(layer_key, len(self.layers))
         for layer, key in zip(self.layers[:-1], keys[:-1]):
-            x = layer(x, key)
-            x = self.activation_fn(x)
-        x = self.layers[-1](x, keys[-1])
-        return x
+            features = layer(x, key)
+            x = self.activation_fn(features)
 
-    def normal_forward(self, x, *args):
-        for layer in self.layers[:-1]:
-            x = layer(x)
-            x = self.activation_fn(x)
-        x = self.layers[-1](x)
-        return x
+        out = self.layers[-1](x, keys[-1])
 
-    def __call__(self, x, key=None):
-        return self.forward(x, key)
+        if self.analyze:
+            return out, features
 
+        return out
 
-class ActorCritic(nnx.Module):
-    def __init__(self, in_channels, n_actions, rngs, config):
-        self.atoms = config.atoms
-        self.feature_extractor = CNN(in_channels, config.hidden_channels, rngs, config)
-
-
-        self.actor = MLP(config.hidden_channels * 100, n_actions * self.atoms, rngs, config)
-        self.critic = MLP(config.hidden_channels * 100, self.atoms, rngs, config)
-
-    def __call__(self, x, key=None):
-        features = self.feature_extractor(x)
-        features = features.reshape(features.shape[0], -1)
-        actor = self.actor(features, key)
-        critic = self.critic(features, key)
-
-        return actor, critic
-
-class Critic(nnx.Module):
-    def __init__(self, in_channels, n_actions, rngs, config):
-        self.atoms = config.atoms
-
-        self.feature_extractor = CNN(in_channels, config.hidden_channels, rngs, config)
-        self.mlp = MLP(config.hidden_channels * 100, n_actions * self.atoms, rngs, config)
-
-    def __call__(self, x, key=None):
-        x = self.feature_extractor(x)
-        x = x.reshape((x.shape[0], -1))
-        x = self.mlp(x, key)
-        return x
 
 class NoisyLinear(nnx.Module):
     def __init__(self, in_features, out_features, rngs, config):
@@ -145,8 +156,44 @@ class NoisyLinear(nnx.Module):
         b = self.b_mu + self.b_sigma * noise_b
         return x @ w + b
 
-def get_linear_class(config):
-    if config.noisy_nets:
-        return partial(NoisyLinear, config=config)
-    else:
-        return nnx.Linear
+
+class ActorCritic(nnx.Module):
+    def __init__(self, in_channels, n_actions, rngs, config):
+        self.atoms = config.atoms
+        self.feature_extractor = ImpalaFeatureExtractor(in_channels, config.hidden_channels, rngs, config)
+        actor_atoms = self.atoms if config.categorical_actor else 1
+        critic_atoms = self.atoms
+        mlp = MLP if not config.noisy_nets else NoisyMLP
+        self.actor = mlp(config.hidden_channels * 100, n_actions * actor_atoms, rngs, config)
+        self.critic = mlp(config.hidden_channels * 100, critic_atoms, rngs, config)
+
+        self.analyze = nnx.static(config.analyze)
+
+
+    def __call__(self, x, key=None):
+        features = self.feature_extractor(x)
+        features = features.reshape(features.shape[0], -1)
+        actor = self.actor(features, key)
+        critic = self.critic(features, key)
+
+        if self.analyze:
+            return actor[0], critic[0], {'visual': features, 'actor': actor[1], 'critic': critic[1]}
+
+        return actor, critic
+
+class Critic(nnx.Module):
+    def __init__(self, in_channels, n_actions, rngs, config):
+        self.atoms = config.atoms
+        self.analyze = config.analyze
+
+        self.feature_extractor = CNN(in_channels, config.hidden_channels, rngs, config)
+        mlp = MLP if not config.noisy_nets else NoisyMLP
+        self.mlp = mlp(config.hidden_channels * 100, n_actions * self.atoms, rngs, config)
+
+    def __call__(self, x, key=None):
+        x = self.feature_extractor(x)
+        features = x.reshape((x.shape[0], -1))
+        x = self.mlp(features, key)
+        if self.analyze:
+            return x[0], {'visual': features, 'critic': x[1]}
+        return x

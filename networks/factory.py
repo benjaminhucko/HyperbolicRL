@@ -35,7 +35,7 @@ def make_network(in_shape, out_shape, rngs, config):
                       'config': config}
 
     if config.geometry != 'euclidean':
-        init_val = 1.0 if config.learn_curvature else 0.1
+        init_val = 1 if config.learn_curvature else 0.1
         network_inputs['manifold'] = PoincareBall(Curvature(init_val, learnable=config.learn_curvature))
     if not config.duelling and config.strategy == 'dqn':
         return critic(**network_inputs)
@@ -45,7 +45,7 @@ def make_network(in_shape, out_shape, rngs, config):
 
 def make_optim(model, config):
     if config.geometry == 'euclidean':
-        optimizer = optax.adam(learning_rate=config.learning_rate)
+        optimizer = optax.adam(learning_rate=config.lr)
     else:
-        optimizer = riemannian_adam(config.learning_rate)
+        optimizer = riemannian_adam(config.lr)
     return nnx.Optimizer(model, optimizer, wrt=nnx.Param)

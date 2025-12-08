@@ -1,4 +1,5 @@
 import time
+from functools import partial
 
 import distrax
 import jax
@@ -8,17 +9,38 @@ import rlax
 from flax import nnx
 
 from agents.agent import Agent
+from analysis.gradient_logger import Analyzer
 from networks.euclidean import ActorCritic
 from networks.factory import make_network, make_optim
+from optimization.loss import hl_gauss_transform
+from optimization.norm import normalize
+
+def mse_value_loss(values, returns):
+    value_loss = optax.squared_error(values.squeeze(), returns)
+    return jnp.mean(value_loss)
+
+def categorical_value_loss(values, returns, support):
+    to_probs, fp = hl_gauss_transform(support)
+
+    target_prob = to_probs(returns)
+    value_loss = optax.softmax_cross_entropy(values, target_prob)
+    return jnp.mean(value_loss)
+
+def categorical_value_post(values, support):
+    _, from_probs = hl_gauss_transform(support)
+    values = nnx.softmax(values, axis=-1)
+    return from_probs(values)
 
 
 class PPOPolicy(nnx.Module):
-    def __init__(self, obs_shape, n_actions, rngs, config):
-        self.model = make_network(obs_shape[-1], n_actions, rngs, config)
+    def __init__(self, n_channels, n_actions, post_fn, rngs, config):
+        self.model = make_network(n_channels, n_actions, rngs, config)
+        self.post_fn = post_fn
 
     def __call__(self, obs, key):
         network_key, sample_key = jax.random.split(key, 2)
         action_logits, values = self.model(obs, network_key)
+        values = self.post_fn(values)
         policy = distrax.Categorical(logits=action_logits)
         action = policy.sample(seed=sample_key)
         log_probs = policy.log_prob(action).squeeze()
@@ -27,10 +49,19 @@ class PPOPolicy(nnx.Module):
 
 
 class PPOAgent(Agent):
-    def __init__(self, obs_shape, n_actions, rngs, config):
-        super().__init__(obs_shape, n_actions, rngs, config)
-        self.policy = PPOPolicy(obs_shape, n_actions, rngs, config)
+    def __init__(self, n_channels, n_actions, rngs, config):
+        super().__init__(n_channels, n_actions, rngs, config)
+        if config.distributional:
+            self.support = jnp.linspace(config.v_min, config.v_max, config.atoms + 1)
+            self.value_loss_fn = partial(categorical_value_loss, support=self.support)
+            self.post_fn = partial(categorical_value_post, support=self.support)
+        else:
+            self.value_loss_fn = mse_value_loss
+            self.post_fn = nnx.identity
+
+        self.policy = PPOPolicy(n_channels, n_actions, self.post_fn, rngs, config)
         self.optimizer = make_optim(self.policy.model, config)
+        self.analyzer = Analyzer()
 
     @staticmethod
     @nnx.jit
@@ -48,9 +79,9 @@ class PPOAgent(Agent):
         return advantages
 
     @staticmethod
-    @nnx.jit
+    @nnx.jit(static_argnames=['value_loss_fn'])
     def train_step(model, optimizer, returns, advantages, observations, actions, old_log_probs,
-                   clip_threshold, regularization, value_weight):
+                   clip_threshold, regularization, value_weight, value_loss_fn):
         def ppo_loss(model):
             action_logits, values = model(observations, None)
 
@@ -58,11 +89,10 @@ class PPOAgent(Agent):
             log_probs = policy.log_prob(actions)
             log_ratio = log_probs - old_log_probs
             ratio = jnp.exp(log_ratio)
-
-            policy_loss = rlax.clipped_surrogate_pg_loss(ratio, advantages, clip_threshold)
+            normalized_advantages = normalize(advantages)
+            policy_loss = rlax.clipped_surrogate_pg_loss(ratio, normalized_advantages, clip_threshold)
             entropy_loss = jnp.mean(policy.entropy())
-            value_loss = jnp.mean(optax.squared_error(values.squeeze(), returns))
-
+            value_loss = value_loss_fn(values, returns)
             loss = policy_loss - regularization * entropy_loss + value_weight * value_loss
             return loss, {'policy_loss': policy_loss, 'value_loss': value_loss}
 
@@ -72,13 +102,13 @@ class PPOAgent(Agent):
         if hasattr(model, 'manifold'):
             aux['curvature'] = model.manifold.curvature()
         aux['loss'] = loss
+        aux['grads'] = grads
         return aux
 
     def update(self, buffer, rng):
         obs, actions, rewards, dones, log_probs, values, final_obs = buffer.get()
         _, final_value = self.policy.model(final_obs, rng())
-        final_value = final_value.squeeze()
-
+        final_value = self.post_fn(final_value).squeeze()
         # discounts = jnp.where(dones, 0, self.config.gamma)
         # adv_fn_rlax = jax.vmap(rlax.truncated_generalized_advantage_estimation, in_axes=(1, 1, None, 1), out_axes=1)
         # advantages = adv_fn_rlax(rewards, discounts, self.config.gae_lambda,
@@ -92,7 +122,7 @@ class PPOAgent(Agent):
         log_probs = jnp.reshape(log_probs, -1)
         epoch_size = obs.shape[0]
         stats = None
-        for _ in range(self.config.n_epochs):
+        for _ in range(self.config.epochs):
             epoch_indices = jax.random.permutation(rng(), epoch_size, independent=True)
             for start_idx in range(0, epoch_size, self.config.batch_size):
                 end_idx = start_idx + self.config.batch_size
@@ -100,7 +130,10 @@ class PPOAgent(Agent):
                 aux = self.train_step(self.policy.model, self.optimizer, returns[idxs], advantages[idxs],
                                       obs[idxs], actions[idxs], log_probs[idxs],
                                       self.config.clip_threshold, self.config.entorpy_weight,
-                                      self.config.value_weight)
+                                      self.config.value_weight, self.value_loss_fn)
+                grads = aux.pop('grads')
+                # self.analyzer.step(grads)
+
 
                 if stats is None:
                     stats = aux

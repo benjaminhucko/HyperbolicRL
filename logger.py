@@ -8,7 +8,8 @@ import jax.numpy as jnp
 
 class Logger:
     def __init__(self, config):
-        self.writer = SummaryWriter(logdir=f"./logs/{config.strategy}_{int(time.time())}")
+        self.writer = SummaryWriter(logdir=f"./logs/{config.env_name}/{config.strategy}/{config.geometry}/"
+                                           f"log_{int(time.time())}")
         self.cached_episode_length = jnp.zeros(config.num_envs)
         self.cached_episode_return = jnp.zeros(config.num_envs)
         self.config = config
@@ -47,8 +48,11 @@ class Logger:
 
         self.cached_episode_length, self.cached_episode_return = next_cache
         emitted_length, emitted_return = emitted_data
-        logged_data['episode_length'] = jnp.sum(emitted_length) / jnp.sum(batched_dones)
-        logged_data['episode_return'] = jnp.sum(emitted_return) / jnp.sum(batched_dones)
+
+        # THiS IS WRONG
+        if jnp.any(batched_dones):
+            logged_data['episode_length'] = jnp.sum(emitted_length) / jnp.sum(batched_dones)
+            logged_data['episode_return'] = jnp.sum(emitted_return) / jnp.sum(batched_dones)
         logged_data['average_reward'] = jnp.mean(batched_rewards)
         self.publish(logged_data)
 
@@ -57,10 +61,21 @@ class Logger:
             data[key] = sum(data[key]) / len(data[key])
         self.publish(data)
 
+    def log_agent_per_step(self, data):
+        for step in range(len(list(data.values())[0])):
+            step_data = {}
+            for key in data.keys():
+                step_data[key] = data[key][step]
+            self.publish(step_data)
+            self.step += 1
+
     def log(self, env_data, agent_data=None):
         self.step += 1
-        self.log_env(env_data)
-        self.log_agent(agent_data)
+        if self.config.updates == 1:
+            self.log_agent_per_step(agent_data)
+        else:
+            self.log_agent(agent_data)
+            self.log_env(env_data)
         self.writer.flush()
 
 

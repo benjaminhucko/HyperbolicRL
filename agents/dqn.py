@@ -9,8 +9,8 @@ from networks.factory import make_network, make_optim
 
 
 class DQNPolicy(nnx.Module):
-    def __init__(self, obs_shape, n_actions, rng, config, support):
-        self.model = make_network(obs_shape[-1], n_actions, rng, config)
+    def __init__(self, n_channels, n_actions, rng, config, support):
+        self.model = make_network(n_channels, n_actions, rng, config)
         self.q_value_fn = nnx.static(make_q_value_fn(config, support))
 
     def __call__(self, observations, key):
@@ -20,18 +20,18 @@ class DQNPolicy(nnx.Module):
         return action, {}
 
 class DQNAgent(Agent):
-    def __init__(self, obs_shape, n_actions, rngs, config):
-        super().__init__(obs_shape, n_actions, rngs, config)
+    def __init__(self, n_channels, n_actions, rngs, config):
+        super().__init__(n_channels, n_actions, rngs, config)
         self.n_actions = n_actions
         self.support = jnp.linspace(config.v_min, config.v_max, config.atoms)
-        self.policy = DQNPolicy(obs_shape, n_actions, rngs, config, support=self.support)
+        self.policy = DQNPolicy(n_channels, n_actions, rngs, config, support=self.support)
 
         self.model_out = nnx.jit(make_output_fn(config))
         self.loss_fn = make_loss_fn(config)
         self.targets_fn = nnx.jit(make_targets_fn(config, self.support))
 
         if config.ddqn:
-            self.target_model = make_network(obs_shape[-1], n_actions, rngs, config)
+            self.target_model = make_network(n_channels, n_actions, rngs, config)
             nnx.update(self.target_model, nnx.state(self.policy.model))
 
         self.optimizer = make_optim(self.policy.model, self.config)
@@ -46,7 +46,7 @@ class DQNAgent(Agent):
     def update(self, buffer, rngs):
         # batches_per_epoch = buffer.size // self.config.batch_size
         agent_data = {'errors': []}
-        for _ in range(self.config.n_epochs):
+        for _ in range(self.config.epochs):
             states, actions, rewards, next_states, discounts, idxs = buffer.sample_batch(self.config.batch_size, rngs())
             next_actions, _ = self.policy(next_states, rngs())
             target_model = self.target_model if self.config.ddqn else self.policy.model

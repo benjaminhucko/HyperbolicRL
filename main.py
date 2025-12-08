@@ -32,15 +32,16 @@ def sample_init_data(burn_in_key, env, env_init_obs, config):
 def train_agent(env, config):
     logger = Logger(config)
     rngs = nnx.Rngs(config.seed)
-    obs_shape, n_actions = env.observation_space().shape, env.action_space().n
-    agent = make_agent(config.strategy, obs_shape, n_actions, rngs, config)
+    obs_shape, n_actions = env.observation_shape(), env.action_space().n
+    n_channels = obs_shape[-1] if config.geometry != 'hyperbolic' else obs_shape[0]
+    agent = make_agent(config.strategy, n_channels, n_actions, rngs, config)
     buffer = make_buffer(config, obs_shape)
     next_obs = env.reset(rngs())
     if config.sample_init:
         next_state, data = sample_init_data(rngs(), env, next_obs, config)
         buffer = buffer.add_data(*data)
 
-    for update_idx in tqdm(range(config.num_updates)):
+    for update_idx in tqdm(range(config.updates)):
         next_obs, data = run_episode(agent.behavioral_policy(), env, next_obs, config.update_every, rngs())
         buffer = buffer.add_data(*data, next_obs)
         stats = agent.update(buffer, rngs)

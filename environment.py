@@ -54,17 +54,19 @@ class XEnvironment(nnx.Module):
         self.env = nnx.static(env)
         self.env_params = nnx.static(env_params)
         self.env_state = nnx.data(None)
+        self.obs_shape = self.env.observation_space(self.env_params).shape
+
         if obs_shape == 'channel_first':
             self.obs_fn = partial(jnp.transpose, axes=(0, 3, 1, 2))
+            self.obs_shape = (self.obs_shape[2], self.obs_shape[0], self.obs_shape[1])
         else:
             self.obs_fn = nnx.identity
-
 
     def action_space(self):
         return self.env.action_space(self.env_params)
 
-    def observation_space(self):
-        return self.env.observation_space(self.env_params)
+    def observation_shape(self):
+        return self.obs_shape
 
     def reset(self, key):
         obs, state = self.env.reset(key, self.env_params)
@@ -78,16 +80,24 @@ class XEnvironment(nnx.Module):
         obs = self.obs_fn(obs)
         return obs, reward, done
 
+def env_name_factory(env_name):
+    match env_name:
+        case 'breakout': return 'Breakout-MinAtar'
+        case 'asterix': return 'Asterix-MinAtar'
+        case 'freeway': return 'Freeway-MinAtar'
+        case 'space_invaders': return 'SpaceInvaders-MinAtar'
+        case 'seaquest': return 'Seaquest-MinAtar'
 
 def make_env(env_name, num_envs=1, obs_shape='channel_last'):
+    env_name = env_name_factory(env_name)
     env, env_params = gymnax.make(env_name)
     if num_envs > 1:
         env = BatchEnv(env, num_envs)
     return XEnvironment(env, env_params, obs_shape)
 
 def visualize_performance(env_name, policy, key, obs_shape, config):
-    env = make_env(env_name, obs_shape=obs_shape)
-    env, env_params = env.env, env.env_params
+    xenv = make_env(env_name, obs_shape=obs_shape)
+    env, env_params = xenv.env, xenv.env_params
     state_seq, reward_seq = [], []
     key, key_reset = jax.random.split(key)
     obs, env_state = env.reset(key_reset, env_params)
@@ -95,8 +105,8 @@ def visualize_performance(env_name, policy, key, obs_shape, config):
         state_seq.append(env_state)
         key, key_act, key_step = jax.random.split(key, 3)
 
-
-        action, _ = policy(obs[None, :], key_act)
+        obs = xenv.obs_fn(obs[None, :])
+        action, _ = policy(obs, key_act)
         next_obs, next_env_state, reward, done, info = env.step(
             key_step, env_state, action.squeeze(), env_params
         )
