@@ -122,6 +122,7 @@ class PPOAgent(Agent):
         final_value = self.post_fn(final_value).squeeze()
         advantages = self.generalized_advantage_estimation(values, rewards, dones, final_value,
                                                            self.config.gamma, self.config.gae_lambda)
+        returns = advantages + values
 
         b_returns = returns.reshape(-1)
         b_advantages = advantages.reshape(-1)
