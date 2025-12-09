@@ -15,4 +15,3 @@ dependencies:
       - rlax
       - tensorboardX
       - tensorboard
-      - git+https://github.com/oxkitsune/hypaxa.git

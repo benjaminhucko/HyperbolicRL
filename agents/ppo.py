@@ -122,22 +122,20 @@ class PPOAgent(Agent):
         final_value = self.post_fn(final_value).squeeze()
         advantages = self.generalized_advantage_estimation(values, rewards, dones, final_value,
                                                            self.config.gamma, self.config.gae_lambda)
-        returns = advantages + values
-
-        b_returns = returns.reshape(-1)
-        b_advantages = advantages.reshape(-1)
-        b_obs = jnp.reshape(obs, (-1, *obs.shape[2:]))
-        b_actions = jnp.reshape(actions, -1)
-        b_log_probs = jnp.reshape(log_probs, -1)
-        epoch_size = b_obs.shape[0]
+        advantages = advantages.reshape(-1)
+        returns = advantages + values.reshape(-1)
+        obs = jnp.reshape(obs, (-1, *obs.shape[2:]))
+        actions = jnp.reshape(actions, -1)
+        log_probs = jnp.reshape(log_probs, -1)
+        epoch_size = obs.shape[0]
         stats = defaultdict(list)
         for _ in range(self.config.epochs):
             epoch_indices = jax.random.permutation(rng(), epoch_size, independent=True)
             for start_idx in range(0, epoch_size, self.config.batch_size):
                 end_idx = start_idx + self.config.batch_size
                 idxs = epoch_indices[start_idx:end_idx]
-                aux = self.train_step(self.policy.model, self.optimizer, b_returns[idxs], b_advantages[idxs],
-                                      b_obs[idxs], b_actions[idxs], b_log_probs[idxs],
+                aux = self.train_step(self.policy.model, self.optimizer, returns[idxs], advantages[idxs],
+                                      obs[idxs], actions[idxs], log_probs[idxs],
                                       self.config.clip_threshold, self.config.entorpy_weight,
                                       self.config.value_weight, self.value_loss_fn,
                                       analyze=self.config.analyze)
@@ -145,14 +143,20 @@ class PPOAgent(Agent):
                 stats = Analyzer.append(stats, aux)
 
         if grad_analysis:
-            for env_idx in range(1):
-                grads = Analyzer.ppo_loss_analysis(self.policy.model, returns[:, env_idx], advantages[:, env_idx],
-                                                    obs[:, env_idx], actions[:, env_idx], log_probs[:, env_idx],
-                                                    self.config.clip_threshold, self.config.entorpy_weight,
-                                                    self.config.value_weight, self.value_loss_fn)
+            ordered_indices = jnp.arange(0, epoch_size, self.config.num_envs)
+            env_indices = jnp.arange(self.config.num_envs)
+            env_sorted_indices = ordered_indices + env_indices[:, None]
+            start = 0
+            end = min(epoch_size, self.config.log_size)
+            idxs = env_sorted_indices[start:end]
+            # possibly multiple batches
+            grads = Analyzer.ppo_loss_analysis(self.policy.model, returns[idxs], advantages[idxs],
+                                                obs[idxs], actions[idxs], log_probs[idxs],
+                                                self.config.clip_threshold, self.config.entorpy_weight,
+                                                self.config.value_weight, self.value_loss_fn)
 
-                batch_grads = Analyzer.process_raw_grads(grads)
-                stats = Analyzer.append(stats, {'grads': batch_grads})
+            batch_grads = Analyzer.process_raw_grads(grads)
+            stats = Analyzer.append(stats, {'grads': batch_grads})
         return stats
 
     def behavioral_policy(self):
