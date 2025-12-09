@@ -37,7 +37,8 @@ class ImpalaFeatureExtractor(nnx.Module):
         self.activation_fn = euclidean_activation_fn_factory(config.activation)
         # self.pool = HMaxPool2D()
         self.conv = nnx.Conv(in_channels, hidden_channels, **cnn_args)
-        self.impala_layers = nnx.List([ImpalaResidualBlock(hidden_channels, cnn_args, config) for _ in range(2)])
+        self.impala_layers = nnx.List([ImpalaResidualBlock(hidden_channels, cnn_args, config)
+                                       for _ in range(config.n_conv)])
 
     def __call__(self, x):
         x = self.conv(x)

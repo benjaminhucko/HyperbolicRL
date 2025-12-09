@@ -60,7 +60,8 @@ def main():
     obs_shape = 'channel_first' if config.geometry == 'hyperbolic' else 'channel_last'
     env = make_env(config.env, config.num_envs, obs_shape)
     agent = train_agent(env, config)
-    visualize_performance(config.env, agent.policy, jax.random.PRNGKey(config.seed), obs_shape, config)
+    if config.visualize:
+        visualize_performance(config.env, agent.policy, jax.random.PRNGKey(config.seed), obs_shape, config)
 
 if __name__ == '__main__':
     main()

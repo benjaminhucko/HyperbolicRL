@@ -119,7 +119,8 @@ class HImpalaFeatureExtractor(nnx.Module):
         self.activation_fn = hyperbolic_activation_fn_factory(config.activation)
         # self.pool = HMaxPool2D()
         self.conv = HConvolution2D(in_channels, hidden_channels, **cnn_args)
-        self.impala_layers = nnx.List([HImpalaResidualBlock(hidden_channels, cnn_args, config) for _ in range(2)])
+        self.impala_layers = nnx.List([HImpalaResidualBlock(hidden_channels, cnn_args, config)
+                                       for _ in range(config.n_conv)])
 
     def __call__(self, x):
         x = self.conv(x)

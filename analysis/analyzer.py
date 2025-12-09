@@ -1,10 +1,16 @@
 from collections import defaultdict
 from pathlib import Path
 
+import distrax
 import jax
 import jax.numpy as jnp
 import numpy as np
+import rlax
+from flax import nnx
+from jax import grad, vmap
 from matplotlib import pyplot as plt
+
+from optimization.norm import normalize
 
 
 class Analyzer:
@@ -12,8 +18,8 @@ class Analyzer:
         self.data = defaultdict(list)
         self.rollout_tracker = 1
         self.track_every = 50 # in rollouts
-        self.heatmap_dir = 'analysis/heatmaps'
-        self.timeseries_dir = 'analysis/plots'
+        self.heatmap_dir = f'analysis/heatmaps/{config.geometry}'
+        self.timeseries_dir = f'analysis/plots/{config.geometry}'
 
         self.timeseries_data = {'grad': defaultdict(list), 'srank': defaultdict(list)}
         self.timeseries_legend = {}
@@ -48,7 +54,7 @@ class Analyzer:
 
     def track_grads(self, grads):
         # GRADS: [Batch, dim]
-        grads = jnp.stack(grads)
+        grads = jnp.concatenate(grads, axis=0)
         norms = jnp.linalg.norm(grads, axis=-1, keepdims=True)
         cov = (grads @ grads.T) / (norms @ norms.T)
         self.make_heatmap(cov)
@@ -93,9 +99,9 @@ class Analyzer:
         processed_grads = []
         flattened, _ = jax.tree_util.tree_flatten(grads)
         for value in flattened:
-            value = value.reshape(-1)
+            value = value.reshape(value.shape[0], -1)
             processed_grads.append(value)
-        processed_grads = jnp.concatenate(processed_grads, axis=None)
+        processed_grads = jnp.concatenate(processed_grads, axis=1)
         return processed_grads
 
     @staticmethod
@@ -112,3 +118,34 @@ class Analyzer:
 
     def analyze_grads(self):
         return self.rollout_tracker % self.track_every == 0
+
+    @staticmethod
+    @nnx.jit(static_argnames=['value_loss_fn', 'clip_threshold', 'value_weight', 'regularization'])
+    def ppo_loss_analysis(model, returns, advantages, observations, actions, old_log_probs,
+                       clip_threshold, regularization, value_weight, value_loss_fn):
+
+        batch_size = returns.shape[0]
+        returns, advantages, observations, actions, old_log_probs = (jnp.expand_dims(val, axis=1) for val in
+                                             [returns, advantages, observations, actions, old_log_probs])
+        def batch_loss_fn(model, returns, advantages, observations, actions, old_log_probs):
+            out = model(observations, None, analyze=False)
+            action_logits, values = out[0], out[1]
+
+            policy = distrax.Categorical(action_logits)
+            log_probs = policy.log_prob(actions)
+            log_ratio = log_probs - old_log_probs
+            ratio = jnp.exp(log_ratio)
+            normalized_advantages = normalize(advantages)
+
+            clipped_ratios_t = jnp.clip(ratio, 1. - clip_threshold, 1. + clip_threshold)
+            policy_loss = -jnp.fmin(ratio * normalized_advantages, clipped_ratios_t * normalized_advantages)
+
+            entropy_loss = policy.entropy()
+
+            value_loss = value_loss_fn(values, returns)
+            loss = policy_loss - regularization * entropy_loss + value_weight * value_loss
+            loss = loss / batch_size
+            return loss.squeeze()
+        loss_fn = nnx.vmap(nnx.grad(batch_loss_fn), in_axes=(None, 0, 0, 0, 0, 0), out_axes=0)
+        return loss_fn(model, returns, advantages, observations, actions, old_log_probs)
+

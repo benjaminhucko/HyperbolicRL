@@ -9,6 +9,7 @@ import jax.numpy as jnp
 import rlax
 from flax import nnx
 from flax.nnx import vmap
+from tqdm import tqdm
 
 from agents.agent import Agent
 from analysis.analyzer import Analyzer
@@ -19,14 +20,14 @@ from optimization.norm import normalize
 
 def mse_value_loss(values, returns):
     value_loss = optax.squared_error(values.squeeze(), returns)
-    return jnp.mean(value_loss)
+    return value_loss
 
 def categorical_value_loss(values, returns, support):
     to_probs, fp = hl_gauss_transform(support)
 
     target_prob = to_probs(returns)
     value_loss = optax.softmax_cross_entropy(values, target_prob)
-    return jnp.mean(value_loss)
+    return value_loss
 
 def categorical_value_post(values, support):
     _, from_probs = hl_gauss_transform(support)
@@ -96,7 +97,7 @@ class PPOAgent(Agent):
             normalized_advantages = normalize(advantages)
             policy_loss = rlax.clipped_surrogate_pg_loss(ratio, normalized_advantages, clip_threshold)
             entropy_loss = jnp.mean(policy.entropy())
-            value_loss = value_loss_fn(values, returns)
+            value_loss = jnp.mean(value_loss_fn(values, returns))
             loss = policy_loss - regularization * entropy_loss + value_weight * value_loss
 
             aux = {'policy_loss': policy_loss, 'value_loss': value_loss}
@@ -119,28 +120,23 @@ class PPOAgent(Agent):
         obs, actions, rewards, dones, log_probs, values, final_obs = buffer.get()
         _, final_value = self.policy.model(final_obs, rng())
         final_value = self.post_fn(final_value).squeeze()
-        # discounts = jnp.where(dones, 0, self.config.gamma)
-        # adv_fn_rlax = jax.vmap(rlax.truncated_generalized_advantage_estimation, in_axes=(1, 1, None, 1), out_axes=1)
-        # advantages = adv_fn_rlax(rewards, discounts, self.config.gae_lambda,
-        #                          jnp.concatenate((values, jnp.expand_dims(final_value, 0)), 0))
         advantages = self.generalized_advantage_estimation(values, rewards, dones, final_value,
                                                            self.config.gamma, self.config.gae_lambda)
-        advantages = advantages.reshape(-1)
-        returns = advantages + values.reshape(-1)
-        obs = jnp.reshape(obs, (-1, *obs.shape[2:]))
-        actions = jnp.reshape(actions, -1)
-        log_probs = jnp.reshape(log_probs, -1)
-        epoch_size = obs.shape[0]
+
+        b_returns = returns.reshape(-1)
+        b_advantages = advantages.reshape(-1)
+        b_obs = jnp.reshape(obs, (-1, *obs.shape[2:]))
+        b_actions = jnp.reshape(actions, -1)
+        b_log_probs = jnp.reshape(log_probs, -1)
+        epoch_size = b_obs.shape[0]
         stats = defaultdict(list)
         for _ in range(self.config.epochs):
-            stats = defaultdict(list)
-
             epoch_indices = jax.random.permutation(rng(), epoch_size, independent=True)
             for start_idx in range(0, epoch_size, self.config.batch_size):
                 end_idx = start_idx + self.config.batch_size
                 idxs = epoch_indices[start_idx:end_idx]
-                aux = self.train_step(self.policy.model, self.optimizer, returns[idxs], advantages[idxs],
-                                      obs[idxs], actions[idxs], log_probs[idxs],
+                aux = self.train_step(self.policy.model, self.optimizer, b_returns[idxs], b_advantages[idxs],
+                                      b_obs[idxs], b_actions[idxs], b_log_probs[idxs],
                                       self.config.clip_threshold, self.config.entorpy_weight,
                                       self.config.value_weight, self.value_loss_fn,
                                       analyze=self.config.analyze)
@@ -148,14 +144,11 @@ class PPOAgent(Agent):
                 stats = Analyzer.append(stats, aux)
 
         if grad_analysis:
-            obs, actions, log_probs, advantages \
-                = (jnp.expand_dims(val, axis=1) for val in [obs, actions, log_probs, advantages])
-            for idx in range(epoch_size):
-                grads = self.train_step(self.policy.model, self.optimizer, returns[idx], advantages[idx],
-                                        obs[idx], actions[idx], log_probs[idx],
-                                        self.config.clip_threshold, self.config.entorpy_weight,
-                                        self.config.value_weight, self.value_loss_fn,
-                                        analyze=False, eval_grads=True)
+            for env_idx in range(1):
+                grads = Analyzer.ppo_loss_analysis(self.policy.model, returns[:, env_idx], advantages[:, env_idx],
+                                                    obs[:, env_idx], actions[:, env_idx], log_probs[:, env_idx],
+                                                    self.config.clip_threshold, self.config.entorpy_weight,
+                                                    self.config.value_weight, self.value_loss_fn)
 
                 batch_grads = Analyzer.process_raw_grads(grads)
                 stats = Analyzer.append(stats, {'grads': batch_grads})

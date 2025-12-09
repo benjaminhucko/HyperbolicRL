@@ -17,12 +17,12 @@ def parse_args():
     # Setup args
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--env', type=str, default='breakout',
-                        choices=['asterix', 'breakout', 'freeway', 'seaquest', 'space_invaders'])
+                        choices=['asterix', 'breakout', 'freeway', 'space_invaders'])
     parser.add_argument('--strategy', type=str, default='ppo')
-    parser.add_argument('--num-envs', type=int, default=16)
+    parser.add_argument('--num-envs', type=int, default=32)
 
     # Update frequency args
-    parser.add_argument('--update-after', type=int, default=100)
+    parser.add_argument('--update-after', type=int, default=0)
     parser.add_argument('--update-every', type=int, default=100)
     parser.add_argument('--updates', type=int, default=200)
 
@@ -49,6 +49,7 @@ def parse_args():
     parser.add_argument('--atoms', type=int, default=51)
     parser.add_argument('--v-min', type=float, default=-10)
     parser.add_argument('--v-max', type=float, default=10)
+    parser.add_argument('--log-size', type=int, default=100)
 
     # Convergence args
     parser.add_argument('--lr', type=float, default=1e-3)
@@ -64,7 +65,7 @@ def parse_args():
 
     parser.add_argument('--kernel-size', type=int, default=3)
     parser.add_argument('--stride', type=int, default=1)
-    parser.add_argument('--n-conv', type=int, default=2)
+    parser.add_argument('--n-conv', type=int, default=1)
 
     ## MLP
     # parser.add_argument('--hidden-features', type=int, default=256)
