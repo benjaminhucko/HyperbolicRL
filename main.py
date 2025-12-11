@@ -61,7 +61,8 @@ def main():
     env = make_env(config.env, config.num_envs, obs_shape)
     agent = train_agent(env, config)
     if config.visualize:
-        visualize_performance(config.env, agent.policy, jax.random.PRNGKey(config.seed), obs_shape, config)
+        visualize_performance(config.env, agent.eval_policy(),
+                              jax.random.PRNGKey(config.seed), obs_shape, config)
 
 if __name__ == '__main__':
     main()

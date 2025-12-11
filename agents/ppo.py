@@ -39,11 +39,16 @@ class PPOPolicy(nnx.Module):
     def __init__(self, n_channels, n_actions, post_fn, rngs, config):
         self.model = make_network(n_channels, n_actions, rngs, config)
         self.post_fn = post_fn
+        self.eval = False
 
     def __call__(self, obs, key):
         network_key, sample_key = jax.random.split(key, 2)
         action_logits, values = self.model(obs, network_key)
+        if self.eval:
+            return jnp.argmax(action_logits, axis=-1), values
+
         values = self.post_fn(values)
+
         policy = distrax.Categorical(logits=action_logits)
         action = policy.sample(seed=sample_key)
         log_probs = policy.log_prob(action).squeeze()
@@ -159,3 +164,8 @@ class PPOAgent(Agent):
 
     def behavioral_policy(self):
         return self.policy
+
+    def eval_policy(self):
+        self.policy.eval = True
+        return self.policy
+

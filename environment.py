@@ -107,7 +107,7 @@ def visualize_performance(env_name, policy, key, obs_shape, config):
         key, key_act, key_step = jax.random.split(key, 3)
 
         obs = xenv.obs_fn(obs[None, :])
-        action, _ = policy(obs, key_act)
+        action, _ = policy(obs, key_act, eval=True)
         next_obs, next_env_state, reward, done, info = env.step(
             key_step, env_state, action.squeeze(), env_params
         )
