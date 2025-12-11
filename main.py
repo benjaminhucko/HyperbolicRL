@@ -21,7 +21,7 @@ def run_episode(policy, init_env, first_obs, n_steps: int, key):
 
     keys = jax.random.split(key, (n_steps, 2))
     end_state, data = jax.lax.scan(run_step, (first_obs, init_env), keys)
-    return end_state[0], data
+    return end_state[1], end_state[0], data
 
 def sample_init_data(burn_in_key, env, env_init_obs, config):
     next_state, data = run_episode(RandomPolicy(env.action_space().n), env, first_obs=env_init_obs,
@@ -42,8 +42,8 @@ def train_agent(env, config):
         next_state, data = sample_init_data(rngs(), env, next_obs, config)
         buffer = buffer.add_data(*data)
 
-    for update_idx in tqdm(range(config.updates)):
-        next_obs, data = run_episode(agent.behavioral_policy(), env, next_obs, config.update_every, rngs())
+    for update_idx in tqdm(range(config.updates), desc='update'):
+        env, next_obs, data = run_episode(agent.behavioral_policy(), env, next_obs, config.update_every, rngs())
         buffer = buffer.add_data(*data, next_obs)
         stats = agent.update(buffer, rngs, analyzer.analyze_grads())
         if config.analyze:

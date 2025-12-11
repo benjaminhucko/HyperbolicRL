@@ -18,8 +18,8 @@ class Analyzer:
         self.data = defaultdict(list)
         self.rollout_tracker = 1
         self.track_every = 50 # in rollouts
-        self.heatmap_dir = f'analysis/heatmaps/{config.geometry}'
-        self.timeseries_dir = f'analysis/plots/{config.geometry}'
+        self.heatmap_dir = f'analysis/{config.env}/heatmaps/{config.geometry}'
+        self.timeseries_dir = f'analysis/{config.env}/plots/{config.geometry}'
 
         self.timeseries_data = {'grad': defaultdict(list), 'srank': defaultdict(list)}
         self.timeseries_legend = {}
@@ -28,22 +28,25 @@ class Analyzer:
         Path(self.timeseries_dir).mkdir(parents=True, exist_ok=True)
 
     def make_heatmap(self, data):
+        uid = f'{self.heatmap_dir}/{self.rollout_tracker}'
+        np.save(uid, data)
         fig = plt.figure()
         plt.imshow(data, cmap='viridis')
         plt.title('Heatmap of covariance in gradients')
-        plt.savefig(f'{self.heatmap_dir}/{self.rollout_tracker}.png')
+        plt.savefig(f'{uid}.png')
         plt.close(fig)
 
     def make_timeseries(self, key, data):
+        uid = f'{self.timeseries_dir}/{key}'
         x_ticks = np.linspace(0, self.rollout_tracker, len(data))
-        data = np.array(data)
+        np.save(uid, data)
         total_rank = self.timeseries_legend[key]
         fig = plt.figure()
         plt.plot(x_ticks, data, linestyle='-')
         plt.xlabel('rollout')
         plt.ylabel('effective rank')
         plt.title(f'plot of effective rank over time (total rank {total_rank})')
-        plt.savefig(f'{self.timeseries_dir}/{key}.png')
+        plt.savefig(f'{uid}.png')
         plt.close(fig)
 
     def add_to_dict(self, data, path, value):

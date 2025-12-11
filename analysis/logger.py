@@ -27,7 +27,7 @@ class Logger:
             self.writer.add_scalar(f"train/{key}", value, step)
 
     def log_env(self, data):
-        logged_data = {key: 0 for key in self.env_keys}
+        logged_data = {}
         batched_rewards, batched_dones = data[2], data[4]
 
         def traverse_data(carry, state):
@@ -37,6 +37,7 @@ class Logger:
             episode_length += jnp.ones_like(rewards)
             episode_return += rewards
 
+            # Emit on dones
             emit_length = jnp.where(dones, episode_length, 0)
             emit_return = jnp.where(dones, episode_return, 0)
 
@@ -46,13 +47,10 @@ class Logger:
 
         next_cache, emitted_data = jax.lax.scan(traverse_data, (self.cached_episode_length, self.cached_episode_return),
                                                 (batched_rewards, batched_dones))
-
         self.cached_episode_length, self.cached_episode_return = next_cache
         emitted_length, emitted_return = emitted_data
 
-        # THiS IS WRONG
         if jnp.any(batched_dones):
-            logged_data['episode_length'] = jnp.sum(emitted_length) / jnp.sum(batched_dones)
             logged_data['episode_return'] = jnp.sum(emitted_return) / jnp.sum(batched_dones)
         logged_data['average_reward'] = jnp.mean(batched_rewards)
         self.publish(logged_data, self.get_env_interactions())

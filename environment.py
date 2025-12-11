@@ -96,6 +96,7 @@ def make_env(env_name, num_envs=1, obs_shape='channel_last'):
     return XEnvironment(env, env_params, obs_shape)
 
 def visualize_performance(env_name, policy, key, obs_shape, config):
+    policy = nnx.jit(policy)
     xenv = make_env(env_name, obs_shape=obs_shape)
     env, env_params = xenv.env, xenv.env_params
     state_seq, reward_seq = [], []
@@ -127,7 +128,7 @@ def visualize_performance(env_name, policy, key, obs_shape, config):
         specification = 'hyperpp'
 
 
-    out_file_name = f'visualization/{config.geometry}/{config.strategy}/{specification}'
+    out_file_name = f'visualization/{config.env}/{config.geometry}/{config.strategy}/{specification}'
     Path(out_file_name).mkdir(parents=True, exist_ok=True)
     ts = time.time()
     dt = datetime.fromtimestamp(ts)

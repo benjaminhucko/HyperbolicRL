@@ -3,7 +3,6 @@ from functools import partial
 import jax
 import jax.numpy as jnp
 from flax import nnx
-from pyexpat import features
 
 import hypax.nn as hnn
 from hypax.array import ManifoldArray
@@ -52,13 +51,14 @@ class HMLP(nnx.Module):
         if config.n_linear == 1:
             self.layers.append(HLinear(in_channels, out_channels, **mlp_args))
         else:
-            self.layers.append(HLinear(in_channels, config.hidden_channels, **mlp_args))
-            hidden_layers = [HLinear(config.hidden_channels, config.hidden_channels, **mlp_args)
+            self.layers.append(HLinear(in_channels, config.hidden_features, **mlp_args))
+            hidden_layers = [HLinear(config.hidden_features, config.hidden_features, **mlp_args)
                              for _ in range(config.n_linear - 2)]
             self.layers.extend(hidden_layers)
-            self.layers.append(HLinear(config.hidden_channels, out_channels, **mlp_args))
+            self.layers.append(HLinear(config.hidden_features, out_channels, **mlp_args))
 
     def __call__(self, x, key=None, analyze=False):
+        features = x
         for layer in self.layers[:-1]:
             features = layer(x)
             x = self.activation_fn(features)
@@ -85,6 +85,7 @@ class HNoisyMLP(nnx.Module):
 
     def __call__(self, x, layer_key, analyze=False):
         keys = jax.random.split(layer_key, len(self.layers))
+        features = x
         for layer, key in zip(self.layers[:-1], keys[:-1]):
             features = layer(x, key)
             x = self.activation_fn(features)
@@ -156,6 +157,7 @@ class HActorCritic(nnx.Module):
         features = x.flatten(manifold_axis=1)
         actor = self.actor(features, key, analyze)
         critic = self.critic(features, key, analyze)
+
 
         if analyze:
             return actor[0].data, critic[0].data, {'visual': features.data, 'actor': actor[1].data,

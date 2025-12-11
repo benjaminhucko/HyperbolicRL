@@ -82,10 +82,10 @@ class PPOAgent(Agent):
 
     @staticmethod
     @nnx.jit(static_argnames=['value_loss_fn', 'clip_threshold', 'value_weight', 'regularization',
-                              'analyze', 'eval_grads'])
+                              'analyze'])
     def train_step(model, optimizer, returns, advantages, observations, actions, old_log_probs,
                    clip_threshold, regularization, value_weight, value_loss_fn,
-                   analyze=False, eval_grads=False):
+                   analyze=False):
         def ppo_loss(model):
             out = model(observations, None, analyze=analyze)
             action_logits, values = out[0], out[1]
@@ -100,15 +100,12 @@ class PPOAgent(Agent):
             value_loss = jnp.mean(value_loss_fn(values, returns))
             loss = policy_loss - regularization * entropy_loss + value_weight * value_loss
 
-            aux = {'policy_loss': policy_loss, 'value_loss': value_loss}
+            aux = {'policy_loss': policy_loss, 'value_loss': value_loss, 'entropy_loss': -entropy_loss}
             if analyze:
                 aux['embeddings'] = out[2]
             return loss, aux
 
         (loss, aux), grads = nnx.value_and_grad(ppo_loss, has_aux=True)(model)
-        if eval_grads:
-            return grads
-
         optimizer.update(model, grads)  # in-place updates
 
         if hasattr(model, 'manifold'):
@@ -129,7 +126,7 @@ class PPOAgent(Agent):
         log_probs = jnp.reshape(log_probs, -1)
         epoch_size = obs.shape[0]
         stats = defaultdict(list)
-        for _ in range(self.config.epochs):
+        for _ in tqdm(range(self.config.epochs), desc='epoch', leave=False):
             epoch_indices = jax.random.permutation(rng(), epoch_size, independent=True)
             for start_idx in range(0, epoch_size, self.config.batch_size):
                 end_idx = start_idx + self.config.batch_size
@@ -146,6 +143,7 @@ class PPOAgent(Agent):
             ordered_indices = jnp.arange(0, epoch_size, self.config.num_envs)
             env_indices = jnp.arange(self.config.num_envs)
             env_sorted_indices = ordered_indices + env_indices[:, None]
+            env_sorted_indices = env_sorted_indices.reshape(-1)
             start = 0
             end = min(epoch_size, self.config.log_size)
             idxs = env_sorted_indices[start:end]

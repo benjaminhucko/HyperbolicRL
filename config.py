@@ -1,8 +1,5 @@
 import argparse
 
-from sympy.vector.implicitregion import conic_coeff
-
-
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--geometry', type=str, choices=['euclidean', 'hyperbolic', 'hybrid'],
@@ -60,16 +57,14 @@ def parse_args():
     parser.add_argument('--epsilon', type=float, default=0.2)
 
     ## CNN
-    # parser.add_argument('--hidden-channels', type=int, default=64)
     parser.add_argument('--hidden-channels', type=int, default=16)
 
     parser.add_argument('--kernel-size', type=int, default=3)
     parser.add_argument('--stride', type=int, default=1)
-    parser.add_argument('--n-conv', type=int, default=1)
+    parser.add_argument('--n-conv', type=int, default=2)
 
     ## MLP
-    # parser.add_argument('--hidden-features', type=int, default=256)
-    parser.add_argument('--hidden-features', type=int, default=64)
+    parser.add_argument('--hidden-features', type=int, default=16)
     parser.add_argument('--n-linear', type=int, default=2)
 
     parser.add_argument('--visualize', action='store_true')

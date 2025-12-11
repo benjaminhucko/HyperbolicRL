@@ -79,13 +79,15 @@ class MLP(nnx.Module):
         if config.n_linear == 1:
             self.layers.append(nnx.Linear(in_channels, out_channels, rngs=rngs))
         else:
-            self.layers.append(nnx.Linear(in_channels, config.hidden_channels, rngs=rngs))
-            hidden_layers = [nnx.Linear(config.hidden_channels, config.hidden_channels, rngs=rngs)
+            self.layers.append(nnx.Linear(in_channels, config.hidden_features, rngs=rngs))
+            hidden_layers = [nnx.Linear(config.hidden_features, config.hidden_features, rngs=rngs)
                              for _ in range(config.n_linear - 2)]
             self.layers.extend(hidden_layers)
-            self.layers.append(nnx.Linear(config.hidden_channels, out_channels, rngs=rngs))
+            self.layers.append(nnx.Linear(config.hidden_features, out_channels, rngs=rngs))
 
     def __call__(self, x, key=None, analyze=False):
+        features = x
+        # x = self.activation_fn(features)
         for layer in self.layers[:-1]:
             features = layer(x)
             x = self.activation_fn(features)
@@ -105,14 +107,15 @@ class NoisyMLP(nnx.Module):
         if config.n_linear == 1:
             self.layers.append(NoisyLinear(in_channels, out_channels, **mlp_args))
         else:
-            self.layers.append(NoisyLinear(in_channels, config.hidden_channels, **mlp_args))
-            hidden_layers = [NoisyLinear(config.hidden_channels, config.hidden_channels, **mlp_args)
+            self.layers.append(NoisyLinear(in_channels, config.hidden_features, **mlp_args))
+            hidden_layers = [NoisyLinear(config.hidden_features, config.hidden_features, **mlp_args)
                              for _ in range(config.n_linear - 2)]
             self.layers.extend(hidden_layers)
-            self.layers.append(NoisyLinear(config.hidden_channels, out_channels, **mlp_args))
+            self.layers.append(NoisyLinear(config.hidden_features, out_channels, **mlp_args))
 
     def __call__(self, x, layer_key, analyze=False):
         keys = jax.random.split(layer_key, len(self.layers))
+        features = x
         for layer, key in zip(self.layers[:-1], keys[:-1]):
             features = layer(x, key)
             x = self.activation_fn(features)
