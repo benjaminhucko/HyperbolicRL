@@ -5,10 +5,9 @@ from flax.nnx import RMSNorm
 
 from hypax.array import ManifoldArray
 from networks.euclidean import CNN, euclidean_activation_fn_factory, ImpalaResidualBlock, MLP
-from networks.hyperbolic import HMLP
+from networks.hyperbolic import HMLP, hyperbolic_activation_fn_factory
 
 import jax.numpy as jnp
-
 
 class HyperEuclideanPart(nnx.Module):
     def __init__(self, in_channels, out_features, rngs, config):

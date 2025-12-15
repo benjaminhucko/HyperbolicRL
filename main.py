@@ -5,10 +5,13 @@ from tqdm import tqdm
 from agents.agent_factory import make_agent
 from agents.random_policy import RandomPolicy
 from analysis.analyzer import Analyzer
+from analysis.evaluator import Evaluator
 from buffer import make_buffer
 from config import get_config
-from environment import make_env, visualize_performance
+from environment import make_env, visualize_performance, StickyAction
 from analysis.logger import Logger
+
+import jax.numpy as jnp
 
 @nnx.jit(static_argnames=['n_steps'])
 def run_episode(policy, init_env, first_obs, n_steps: int, key):
@@ -28,11 +31,10 @@ def sample_init_data(burn_in_key, env, env_init_obs, config):
                                    n_steps=config.update_after, key=burn_in_key)
     return next_state, data
 
-def train_agent(env, config):
+def train_agent(env, config, rngs):
     logger = Logger(config)
     analyzer = Analyzer(config)
 
-    rngs = nnx.Rngs(config.seed)
     obs_shape, n_actions = env.observation_shape(), env.action_space().n
     n_channels = obs_shape[-1] if config.geometry != 'hyperbolic' else obs_shape[0]
     agent = make_agent(config.strategy, n_channels, n_actions, rngs, config)
@@ -55,14 +57,38 @@ def train_agent(env, config):
 
     return agent
 
+
+def eval_agent(env_name, policy, rngs, obs_shape, config, sticky_action=False):
+    xenv = make_env(env_name, num_envs=config.eval_episodes, obs_shape=obs_shape)
+    if sticky_action:
+        xenv = StickyAction(xenv)
+
+    policy = nnx.jit(policy)
+    finished = jnp.zeros((config.eval_episodes,))
+    returns = jnp.zeros((config.eval_episodes,))
+
+    obs = xenv.reset(rngs())
+    while not jnp.all(finished):
+        action, aux = policy(obs, rngs())
+        next_obs, reward, dones = xenv.step(action, rngs())
+        finished = jnp.where(dones, True, finished)
+        returns = jnp.where(finished, returns, reward)
+    Evaluator(config, sticky_action).log(returns)
+
 def main():
     config = get_config()
     obs_shape = 'channel_first' if config.geometry == 'hyperbolic' else 'channel_last'
     env = make_env(config.env, config.num_envs, obs_shape)
-    agent = train_agent(env, config)
+    rngs = nnx.Rngs(config.seed)
+
+    agent = train_agent(env, config, rngs)
+    if config.eval:
+        eval_agent(config.env, agent.eval_policy(), rngs,
+                   obs_shape, config)
+        eval_agent(config.env, agent.eval_policy(), rngs,
+                   obs_shape, config, sticky_action=True)
     if config.visualize:
-        visualize_performance(config.env, agent.eval_policy(),
-                              jax.random.PRNGKey(config.seed), obs_shape, config)
+        visualize_performance(config.env, agent.eval_policy(), rngs(), obs_shape, config)
 
 if __name__ == '__main__':
     main()

@@ -9,8 +9,7 @@ import jax.numpy as jnp
 
 class Logger:
     def __init__(self, config):
-        self.writer = SummaryWriter(logdir=f"./analysis/logs/{config.env}/{config.strategy}/{config.geometry}/"
-                                           f"log_{int(time.time())}")
+        self.writer = SummaryWriter(logdir=f"{config.logging_dir}/tensorboard/")
         self.cached_episode_length = jnp.zeros(config.num_envs)
         self.cached_episode_return = jnp.zeros(config.num_envs)
         self.config = config
@@ -51,6 +50,7 @@ class Logger:
         emitted_length, emitted_return = emitted_data
 
         if jnp.any(batched_dones):
+            logged_data['episode_length'] = jnp.sum(emitted_length) / jnp.sum(batched_dones)
             logged_data['episode_return'] = jnp.sum(emitted_return) / jnp.sum(batched_dones)
         logged_data['average_reward'] = jnp.mean(batched_rewards)
         self.publish(logged_data, self.get_env_interactions())

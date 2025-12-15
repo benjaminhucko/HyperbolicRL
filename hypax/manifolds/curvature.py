@@ -27,7 +27,7 @@ class Curvature(nnx.Module):
             self.constraining_strategy = constraining_strategy
             print('learnable parameter indicating curvature')
         else:
-            self.value = nnx.static(value)
+            self.value = nnx.static(value.item())
             self.constraining_strategy = nnx.identity
 
     def __call__(self):

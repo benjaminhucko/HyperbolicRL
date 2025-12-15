@@ -107,7 +107,7 @@ def visualize_performance(env_name, policy, key, obs_shape, config):
         key, key_act, key_step = jax.random.split(key, 3)
 
         obs = xenv.obs_fn(obs[None, :])
-        action, _ = policy(obs, key_act, eval=True)
+        action, _ = policy(obs, key_act)
         next_obs, next_env_state, reward, done, info = env.step(
             key_step, env_state, action.squeeze(), env_params
         )
@@ -135,3 +135,25 @@ def visualize_performance(env_name, policy, key, obs_shape, config):
 
     formatted = dt.strftime("%m_%d_%H_%M")
     vis.animate(f"{out_file_name}/{formatted}.gif")
+
+
+class StickyAction:
+    def __init__(self, xenv, sigma=0.25):
+        self.env = xenv
+        self.past_actions = None
+        self.sigma = sigma
+
+
+    def reset(self, key):
+        return self.env.reset(key)
+
+    def step(self, action, key):
+        key, sticky_action_key = jax.random.split(key, 2)
+        next_actions = action
+
+        if self.past_actions is not None:
+            p = jax.random.uniform(sticky_action_key, shape=action.shape[0])
+            action = jnp.where(p < self.sigma, self.past_actions, action)
+
+        self.past_actions = next_actions
+        return self.env.step(action, key)

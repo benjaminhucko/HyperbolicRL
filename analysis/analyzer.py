@@ -18,8 +18,8 @@ class Analyzer:
         self.data = defaultdict(list)
         self.rollout_tracker = 1
         self.track_every = 50 # in rollouts
-        self.heatmap_dir = f'analysis/{config.env}/heatmaps/{config.geometry}'
-        self.timeseries_dir = f'analysis/{config.env}/plots/{config.geometry}'
+        self.heatmap_dir = f'{base_dir}/heatmaps/'
+        self.timeseries_dir = f'{base_dir}/plots/'
 
         self.timeseries_data = {'grad': defaultdict(list), 'srank': defaultdict(list)}
         self.timeseries_legend = {}

@@ -16,12 +16,12 @@ def parse_args():
     parser.add_argument('--env', type=str, default='breakout',
                         choices=['asterix', 'breakout', 'freeway', 'space_invaders'])
     parser.add_argument('--strategy', type=str, default='ppo')
-    parser.add_argument('--num-envs', type=int, default=32)
+    parser.add_argument('--num-envs', type=int, default=8) # old: 32
 
     # Update frequency args
     parser.add_argument('--update-after', type=int, default=0)
-    parser.add_argument('--update-every', type=int, default=100)
-    parser.add_argument('--updates', type=int, default=200)
+    parser.add_argument('--update-every', type=int, default=128) # old 100
+    parser.add_argument('--updates', type=int, default=100)
 
     # PPO args
     parser.add_argument('--gamma', type=float, default=0.99)
@@ -51,10 +51,10 @@ def parse_args():
     # Convergence args
     parser.add_argument('--lr', type=float, default=1e-3)
 
-    parser.add_argument('--epochs', type=int, default=5)
+    parser.add_argument('--epochs', type=int, default=8)
     parser.add_argument('--batch-size', type=int, default=256)
     parser.add_argument('--activation', type=str, default='relu')
-    parser.add_argument('--epsilon', type=float, default=0.2)
+    parser.add_argument('--epsilon', type=float, default=0.1)
 
     ## CNN
     parser.add_argument('--hidden-channels', type=int, default=16)
@@ -64,11 +64,15 @@ def parse_args():
     parser.add_argument('--n-conv', type=int, default=2)
 
     ## MLP
-    parser.add_argument('--hidden-features', type=int, default=16)
-    parser.add_argument('--n-linear', type=int, default=2)
+    parser.add_argument('--hidden-features', type=int, default=128) # 16
+    parser.add_argument('--n-linear', type=int, default=1)
 
     parser.add_argument('--visualize', action='store_true')
     parser.add_argument('--analyze', action='store_true')
+    parser.add_argument('--eval', action='store_true')
+    parser.add_argument('--eval_episodes', type=int, default=10)
+
+
     return parser.parse_args()
 
 def apply_rainbow_flags(config):
@@ -120,4 +124,5 @@ def get_config():
     if not config.distributional:
         config.atoms = 1
 
+    config.logging_dir = f'logs/{config.env}/{config.geometry}/{config.seed}/'
     return config
