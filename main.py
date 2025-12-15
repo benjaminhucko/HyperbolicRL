@@ -75,8 +75,7 @@ def eval_agent(env_name, policy, rngs, obs_shape, config, sticky_action=False):
         returns = jnp.where(finished, returns, reward)
     Evaluator(config, sticky_action).log(returns)
 
-def main():
-    config = get_config()
+def run_experiment(config):
     obs_shape = 'channel_first' if config.geometry == 'hyperbolic' else 'channel_last'
     env = make_env(config.env, config.num_envs, obs_shape)
     rngs = nnx.Rngs(config.seed)
@@ -89,6 +88,18 @@ def main():
                    obs_shape, config, sticky_action=True)
     if config.visualize:
         visualize_performance(config.env, agent.eval_policy(), rngs(), obs_shape, config)
+
+def multiple_seed_experiment():
+    config = get_config()
+
+    for seed in [1, 2, 3, 4, 5, 6]:
+        config.seed = seed
+        run_experiment(config)
+
+
+def main():
+    config = get_config()
+    run_experiment(config)
 
 if __name__ == '__main__':
     main()
