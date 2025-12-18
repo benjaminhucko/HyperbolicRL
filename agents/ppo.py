@@ -22,9 +22,8 @@ def mse_value_loss(values, returns):
     value_loss = optax.squared_error(values.squeeze(), returns)
     return value_loss
 
-def categorical_value_loss(values, returns, support):
-    to_probs, fp = hl_gauss_transform(support)
-
+def categorical_value_loss(values, returns, support, sigma):
+    to_probs, fp = hl_gauss_transform(support, sigma)
     target_prob = to_probs(returns)
     value_loss = optax.softmax_cross_entropy(values, target_prob)
     return value_loss
@@ -61,7 +60,7 @@ class PPOAgent(Agent):
         super().__init__(n_channels, n_actions, rngs, config)
         if config.distributional:
             self.support = jnp.linspace(config.v_min, config.v_max, config.atoms + 1)
-            self.value_loss_fn = partial(categorical_value_loss, support=self.support)
+            self.value_loss_fn = partial(categorical_value_loss, support=self.support, sigma=self.config.gauss_sigma)
             self.post_fn = partial(categorical_value_post, support=self.support)
         else:
             self.value_loss_fn = mse_value_loss
@@ -87,14 +86,18 @@ class PPOAgent(Agent):
 
     @staticmethod
     @nnx.jit(static_argnames=['value_loss_fn', 'clip_threshold', 'value_weight', 'regularization',
-                              'analyze'])
+                              'analyze', 'check_distribution'])
     def train_step(model, optimizer, returns, advantages, observations, actions, old_log_probs,
                    clip_threshold, regularization, value_weight, value_loss_fn,
-                   analyze=False):
+                   analyze=False, check_distribution=False):
         def ppo_loss(model):
             out = model(observations, None, analyze=analyze)
             action_logits, values = out[0], out[1]
 
+            debug_weights, _ = jax.tree_util.tree_flatten(nnx.state(model))
+            # jax.debug.print('action_logits {al}, values {v}, curvature {c}, weights {w}',
+            #                 al=action_logits.dtype, v=values.dtype, c=model.manifold.curvature().dtype,
+            #                 w=debug_weights[0].dtype)
             policy = distrax.Categorical(action_logits)
             log_probs = policy.log_prob(actions)
             log_ratio = log_probs - old_log_probs
@@ -108,6 +111,9 @@ class PPOAgent(Agent):
             aux = {'policy_loss': policy_loss, 'value_loss': value_loss, 'entropy_loss': -entropy_loss}
             if analyze:
                 aux['embeddings'] = out[2]
+            if check_distribution:
+                aux['values_distribution'] = values
+                aux['returns'] = returns
             return loss, aux
 
         (loss, aux), grads = nnx.value_and_grad(ppo_loss, has_aux=True)(model)
@@ -124,6 +130,7 @@ class PPOAgent(Agent):
         final_value = self.post_fn(final_value).squeeze()
         advantages = self.generalized_advantage_estimation(values, rewards, dones, final_value,
                                                            self.config.gamma, self.config.gae_lambda)
+
         advantages = advantages.reshape(-1)
         returns = advantages + values.reshape(-1)
         obs = jnp.reshape(obs, (-1, *obs.shape[2:]))
@@ -131,18 +138,6 @@ class PPOAgent(Agent):
         log_probs = jnp.reshape(log_probs, -1)
         epoch_size = obs.shape[0]
         stats = defaultdict(list)
-        for _ in tqdm(range(self.config.epochs), desc='epoch', leave=False):
-            epoch_indices = jax.random.permutation(rng(), epoch_size, independent=True)
-            for start_idx in range(0, epoch_size, self.config.batch_size):
-                end_idx = start_idx + self.config.batch_size
-                idxs = epoch_indices[start_idx:end_idx]
-                aux = self.train_step(self.policy.model, self.optimizer, returns[idxs], advantages[idxs],
-                                      obs[idxs], actions[idxs], log_probs[idxs],
-                                      self.config.clip_threshold, self.config.entorpy_weight,
-                                      self.config.value_weight, self.value_loss_fn,
-                                      analyze=self.config.analyze)
-
-                stats = Analyzer.append(stats, aux)
 
         if grad_analysis:
             ordered_indices = jnp.arange(0, epoch_size, self.config.num_envs)
@@ -152,20 +147,32 @@ class PPOAgent(Agent):
             start = 0
             end = min(epoch_size, self.config.log_size)
             idxs = env_sorted_indices[start:end]
-            # possibly multiple batches
-            grads = Analyzer.ppo_loss_analysis(self.policy.model, returns[idxs], advantages[idxs],
+            cov = Analyzer.ppo_loss_analysis(self.policy.model, returns[idxs], advantages[idxs],
                                                 obs[idxs], actions[idxs], log_probs[idxs],
                                                 self.config.clip_threshold, self.config.entorpy_weight,
                                                 self.config.value_weight, self.value_loss_fn)
 
-            batch_grads = Analyzer.process_raw_grads(grads)
-            stats = Analyzer.append(stats, {'grads': batch_grads})
+            stats['cov'] = cov
+
+        for _ in tqdm(range(self.config.epochs), desc='epoch', leave=False):
+            epoch_indices = jax.random.permutation(rng(), epoch_size, independent=True)
+            for start_idx in range(0, epoch_size, self.config.batch_size):
+                end_idx = start_idx + self.config.batch_size
+                idxs = epoch_indices[start_idx:end_idx]
+                aux = self.train_step(self.policy.model, self.optimizer, returns[idxs], advantages[idxs],
+                                      obs[idxs], actions[idxs], log_probs[idxs],
+                                      self.config.clip_threshold, self.config.entorpy_weight,
+                                      self.config.value_weight, self.value_loss_fn,
+                                      analyze=self.config.analyze,
+                                      check_distribution=self.config.check_distribution)
+
+                stats = Analyzer.append(stats, aux)
         return stats
 
     def behavioral_policy(self):
         return self.policy
 
     def eval_policy(self):
-        self.policy.eval = True
+        # self.policy.eval = True
         return self.policy
 

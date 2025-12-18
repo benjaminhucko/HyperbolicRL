@@ -9,7 +9,9 @@ import jax.numpy as jnp
 
 class Logger:
     def __init__(self, config):
-        self.writer = SummaryWriter(logdir=f"{config.logging_dir}/tensorboard/")
+        self.stationary = config.updates == 1
+        state = 'stationary' if self.stationary else 'dynamic'
+        self.writer = SummaryWriter(logdir=f"{config.logging_dir}/tensorboard/{state}")
         self.cached_episode_length = jnp.zeros(config.num_envs)
         self.cached_episode_return = jnp.zeros(config.num_envs)
         self.config = config
@@ -74,7 +76,7 @@ class Logger:
             self.publish(epoch_data, epoch)
 
     def log(self, env_data, agent_data=None):
-        if self.config.updates == 1:
+        if self.stationary:
             self.log_agent_per_epoch(agent_data)
         else:
             self.log_agent(agent_data)

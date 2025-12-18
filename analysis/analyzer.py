@@ -10,22 +10,32 @@ from flax import nnx
 from jax import grad, vmap
 from matplotlib import pyplot as plt
 
+from optimization.loss import hl_gauss_transform
 from optimization.norm import normalize
 
 
 class Analyzer:
     def __init__(self, config):
         self.data = defaultdict(list)
+        self.check_distribution = config.check_distribution
         self.rollout_tracker = 1
         self.track_every = 50 # in rollouts
-        self.heatmap_dir = f'{base_dir}/heatmaps/'
-        self.timeseries_dir = f'{base_dir}/plots/'
+        self.heatmap_dir = f'{config.logging_dir}/heatmaps/'
+        self.timeseries_dir = f'{config.logging_dir}/plots/'
 
         self.timeseries_data = {'grad': defaultdict(list), 'srank': defaultdict(list)}
         self.timeseries_legend = {}
 
+
         Path(self.heatmap_dir).mkdir(parents=True, exist_ok=True)
         Path(self.timeseries_dir).mkdir(parents=True, exist_ok=True)
+
+        if self.check_distribution:
+            self.distribution_dir = f'{config.logging_dir}/value_distribution/'
+            self.support = jnp.linspace(config.v_min, config.v_max, config.atoms + 1)
+            self.centers = (self.support[:-1] + self.support[1:]) / 2
+            Path(self.distribution_dir).mkdir(parents=True, exist_ok=True)
+
 
     def make_heatmap(self, data):
         uid = f'{self.heatmap_dir}/{self.rollout_tracker}'
@@ -55,14 +65,6 @@ class Analyzer:
         else:
             data[path].append(value)
 
-    def track_grads(self, grads):
-        # GRADS: [Batch, dim]
-        grads = jnp.concatenate(grads, axis=0)
-        norms = jnp.linalg.norm(grads, axis=-1, keepdims=True)
-        cov = (grads @ grads.T) / (norms @ norms.T)
-        self.make_heatmap(cov)
-
-
     def track_effective_rank(self, features, sigma=0.01):
         for key, value in features.items():
             s_ranks = []
@@ -80,13 +82,40 @@ class Analyzer:
             s_rank = sum(s_ranks) / len(s_ranks)
             self.add_to_dict(self.timeseries_data['srank'], key, s_rank)
 
+    def plot_distribution(self, actual, target, idx):
+        uid = f'{self.distribution_dir}/{self.rollout_tracker}_{idx}'
+        fig = plt.figure()
+        plt.plot(self.centers, actual, linestyle='-')
+        plt.plot(self.centers, target, linestyle='-')
+
+        plt.xlabel('support')
+        plt.ylabel('density')
+        plt.title(f'plot of predicted and actual value distriubtion')
+        plt.savefig(f'{uid}.png')
+        plt.close(fig)
+
+
+    def distribution_analysis(self, values, returns):
+        # values = jnp.concatenate(values, axis=0)
+        # returns = jnp.concatenate(returns, axis=0)
+        values = jnp.expand_dims(values[0][0], axis=0)
+        returns = jnp.expand_dims(returns[0][0], axis=0)
+
+        to_probs, fp = hl_gauss_transform(self.support)
+        target_probs = to_probs(returns)
+
+        values = nnx.softmax(values, axis=-1)
+        for sample_idx, (value, target_prob) in enumerate(zip(values, target_probs)):
+            self.plot_distribution(value, target_prob, sample_idx)
 
     def step(self, stats):
-        if 'grads' in stats:
-            self.track_grads(stats.pop('grads'))
+        if 'cov' in stats:
+            self.make_heatmap(stats.pop('cov'))
         self.track_effective_rank(stats.pop('embeddings'))
-        self.rollout_tracker += 1
 
+        if self.check_distribution:
+            self.distribution_analysis(stats.pop('values_distribution'), stats.pop('returns'))
+        self.rollout_tracker += 1
 
     def clear_all(self):
         self.data = {}
@@ -150,5 +179,9 @@ class Analyzer:
             loss = loss / batch_size
             return loss.squeeze()
         loss_fn = nnx.vmap(nnx.grad(batch_loss_fn), in_axes=(None, 0, 0, 0, 0, 0), out_axes=0)
-        return loss_fn(model, returns, advantages, observations, actions, old_log_probs)
+        grads = loss_fn(model, returns, advantages, observations, actions, old_log_probs)
+        grads = Analyzer.process_raw_grads(grads)
+        norms = jnp.linalg.norm(grads, axis=-1, keepdims=True)
+        cov = (grads @ grads.T) / (norms @ norms.T)
+        return cov
 

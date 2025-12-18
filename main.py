@@ -68,11 +68,15 @@ def eval_agent(env_name, policy, rngs, obs_shape, config, sticky_action=False):
     returns = jnp.zeros((config.eval_episodes,))
 
     obs = xenv.reset(rngs())
+    pbar = tqdm(desc="Evaluating agent")
     while not jnp.all(finished):
         action, aux = policy(obs, rngs())
-        next_obs, reward, dones = xenv.step(action, rngs())
+        obs, reward, dones = xenv.step(action, rngs())
         finished = jnp.where(dones, True, finished)
-        returns = jnp.where(finished, returns, reward)
+        returns = jnp.where(finished, returns, returns + reward)
+        pbar.update(1)
+
+    pbar.close()
     Evaluator(config, sticky_action).log(returns)
 
 def run_experiment(config):
@@ -88,14 +92,6 @@ def run_experiment(config):
                    obs_shape, config, sticky_action=True)
     if config.visualize:
         visualize_performance(config.env, agent.eval_policy(), rngs(), obs_shape, config)
-
-def multiple_seed_experiment():
-    config = get_config()
-
-    for seed in [1, 2, 3, 4, 5, 6]:
-        config.seed = seed
-        run_experiment(config)
-
 
 def main():
     config = get_config()

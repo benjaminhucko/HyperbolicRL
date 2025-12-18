@@ -1,0 +1,11 @@
+{
+  "geometry": "euclidean",
+  "eval": true,
+  "distributional": true,
+  "epochs": {
+    "breakout": 10,
+    "asterix": 10,
+    "freeway": 10,
+    "space_invaders": 10
+  }
+}

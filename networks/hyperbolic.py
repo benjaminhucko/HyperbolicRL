@@ -19,9 +19,10 @@ def hyperbolic_activation_fn_factory(activation_name):
 
 class HCNN(nnx.Module):
     def __init__(self, in_channels, out_channels, manifold, rngs, config):
+
         super().__init__()
         cnn_args = {'kernel_size': config.kernel_size, 'stride': config.stride, 'manifold': manifold, 'rngs': rngs,
-                    'padding': 1}
+                    'padding': 1, 'param_dtype': config.dtype}
         self.activation_fn = hyperbolic_activation_fn_factory(config.activation)
         layers = []
         if config.n_conv == 1:
@@ -45,7 +46,7 @@ class HMLP(nnx.Module):
     def __init__(self, in_channels, out_channels, manifold, rngs, config):
         self.activation_fn = hyperbolic_activation_fn_factory(config.activation)
 
-        mlp_args = {'manifold': manifold, 'rngs': rngs}
+        mlp_args = {'manifold': manifold, 'rngs': rngs, 'param_dtype': config.dtype}
         self.layers = nnx.List()
 
         if config.n_linear == 1:
@@ -94,8 +95,6 @@ class HNoisyMLP(nnx.Module):
         if analyze:
             return out, features
         return out
-
-
 class HImpalaResidualBlock(nnx.Module):
     def __init__(self, num_filters, cnn_args, config):
         super().__init__()
@@ -115,7 +114,7 @@ class HImpalaFeatureExtractor(nnx.Module):
     def __init__(self, in_channels, hidden_channels, manifold, rngs, config):
         super().__init__()
         cnn_args = {'kernel_size': config.kernel_size, 'stride': config.stride,
-                    'manifold': manifold, 'padding': 1, 'rngs': rngs}
+                    'manifold': manifold, 'padding': 1, 'rngs': rngs, 'param_dtype': config.dtype}
 
         self.activation_fn = hyperbolic_activation_fn_factory(config.activation)
         # self.pool = HMaxPool2D()
@@ -157,7 +156,6 @@ class HActorCritic(nnx.Module):
         features = x.flatten(manifold_axis=1)
         actor = self.actor(features, key, analyze)
         critic = self.critic(features, key, analyze)
-
 
         if analyze:
             return actor[0].data, critic[0].data, {'visual': features.data, 'actor': actor[1].data,

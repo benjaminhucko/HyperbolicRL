@@ -1,0 +1,12 @@
+{
+  "geometry": "hyperbolic",
+  "eval": true,
+  "distributional": true,
+  "float64": true,
+  "epochs": {
+    "breakout": 30,
+    "asterix": 15,
+    "freeway": 30,
+    "space_invaders": 30
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "geometry": "hyperbolic",
+  "epochs": 300,
+  "updates": 1,
+  "num_envs": 32,
+  "distributional": true
+}

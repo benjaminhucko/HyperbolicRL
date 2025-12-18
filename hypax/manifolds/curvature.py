@@ -6,7 +6,8 @@ import jax.numpy as jnp
 class Curvature(nnx.Module):
     def __init__(self, value: float | jax.Array = 1.0,
                  constraining_strategy: tp.Callable[[jax.Array], jax.Array] = nnx.softplus,
-                 learnable: bool = True):
+                 learnable: bool = True,
+                 param_dtype: jnp.dtype = jnp.float32):
         """Class representing curvature of a manifold.
 
             Attributes:
@@ -20,7 +21,7 @@ class Curvature(nnx.Module):
             """
         if jnp.any(value <= 0):
             raise ValueError(f"Curvature must be positive, got {value}")
-        value = jnp.asarray(value, dtype=jnp.float32)
+        value = jnp.asarray(value, dtype=param_dtype)
         self.learnable = nnx.static(learnable)
         if learnable:
             self.value = nnx.Param(value)

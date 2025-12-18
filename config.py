@@ -1,6 +1,7 @@
 import argparse
+import jax.numpy as jnp
 
-def parse_args():
+def parse_args(defaults):
     parser = argparse.ArgumentParser()
     parser.add_argument('--geometry', type=str, choices=['euclidean', 'hyperbolic', 'hybrid'],
                         default='euclidean')
@@ -29,6 +30,7 @@ def parse_args():
     parser.add_argument('--value-weight', type=float, default=0.5)
     parser.add_argument('--clip-threshold', type=float, default=0.1)
     parser.add_argument('--entorpy-weight', type=float, default=0.01)
+    parser.add_argument('--gauss-sigma', type=float, default=1)
 
     # RAINBOW args
     parser.add_argument('--duelling', action='store_true')
@@ -50,11 +52,13 @@ def parse_args():
 
     # Convergence args
     parser.add_argument('--lr', type=float, default=1e-3)
+    parser.add_argument('--grad-clip', type=float, default=0.5)
+    parser.add_argument('--float64', action='store_true')
 
     parser.add_argument('--epochs', type=int, default=8)
     parser.add_argument('--batch-size', type=int, default=256)
     parser.add_argument('--activation', type=str, default='relu')
-    parser.add_argument('--epsilon', type=float, default=0.1)
+    parser.add_argument('--epsilon', type=float, default=0.2)
 
     ## CNN
     parser.add_argument('--hidden-channels', type=int, default=16)
@@ -65,12 +69,15 @@ def parse_args():
 
     ## MLP
     parser.add_argument('--hidden-features', type=int, default=128) # 16
-    parser.add_argument('--n-linear', type=int, default=1)
+    parser.add_argument('--n-linear', type=int, default=2)
 
     parser.add_argument('--visualize', action='store_true')
     parser.add_argument('--analyze', action='store_true')
+    parser.add_argument('--check-distribution', action='store_true')
+
     parser.add_argument('--eval', action='store_true')
-    parser.add_argument('--eval_episodes', type=int, default=10)
+    parser.add_argument('--eval-episodes', type=int, default=50)
+    parser.set_defaults(**defaults)
 
 
     return parser.parse_args()
@@ -111,8 +118,10 @@ def apply_hyper_flags(config):
     return config
 
 
-def get_config():
-    config = parse_args()
+def get_config(defaults=None):
+    if defaults is None:
+        defaults = {}
+    config = parse_args(defaults)
     config.categorical_actor = False
     config.sample_init = (config.strategy == 'dqn')
 
@@ -123,6 +132,9 @@ def get_config():
 
     if not config.distributional:
         config.atoms = 1
+
+    config.dtype = jnp.float64 if config.float64 else jnp.float32
+
 
     config.logging_dir = f'logs/{config.env}/{config.geometry}/{config.seed}/'
     return config
