@@ -1,4 +1,4 @@
 # Hyperbolic Reinforcement learning
 ```bash
-python --geometry hyperbolic --distributional --env freeway --seed 4 --epochs 30 --grad-clip 0.5
+python main.py --check-distribution --geometry hyperbolic --distributional --float64 --gauss-sigma 0.5
 ```

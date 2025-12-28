@@ -143,7 +143,6 @@ class StickyAction:
         self.past_actions = None
         self.sigma = sigma
 
-
     def reset(self, key):
         return self.env.reset(key)
 

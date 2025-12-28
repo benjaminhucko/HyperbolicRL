@@ -3,13 +3,11 @@ from pathlib import Path
 import jax.numpy as jnp
 
 class Evaluator:
-    def __init__(self, config, sticky_action=False):
-        eval_mode = 'sticky_action' if sticky_action else 'normal'
-        self.eval_logdir = f'{config.logging_dir}/eval/{eval_mode}'
+    def __init__(self, config):
+        self.eval_logdir = f'{config.logging_dir}/eval/'
         Path(self.eval_logdir).mkdir(parents=True, exist_ok=True)
 
-
-    def log(self, returns):
-        jnp.savez(f'{self.eval_logdir}/returns', returns)
+    def log(self, sticky_sigma, returns):
+        jnp.savez(f'{self.eval_logdir}/{sticky_sigma}', returns)
 
 

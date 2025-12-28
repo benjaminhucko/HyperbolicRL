@@ -149,7 +149,7 @@ class PPOAgent(Agent):
             idxs = env_sorted_indices[start:end]
             cov = Analyzer.ppo_loss_analysis(self.policy.model, returns[idxs], advantages[idxs],
                                                 obs[idxs], actions[idxs], log_probs[idxs],
-                                                self.config.clip_threshold, self.config.entorpy_weight,
+                                                self.config.clip_threshold, self.config.entropy_weight,
                                                 self.config.value_weight, self.value_loss_fn)
 
             stats['cov'] = cov
@@ -161,7 +161,7 @@ class PPOAgent(Agent):
                 idxs = epoch_indices[start_idx:end_idx]
                 aux = self.train_step(self.policy.model, self.optimizer, returns[idxs], advantages[idxs],
                                       obs[idxs], actions[idxs], log_probs[idxs],
-                                      self.config.clip_threshold, self.config.entorpy_weight,
+                                      self.config.clip_threshold, self.config.entropy_weight,
                                       self.config.value_weight, self.value_loss_fn,
                                       analyze=self.config.analyze,
                                       check_distribution=self.config.check_distribution)

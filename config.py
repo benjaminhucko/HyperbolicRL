@@ -29,7 +29,7 @@ def parse_args(defaults):
     parser.add_argument('--gae-lambda', type=float, default=0.95)
     parser.add_argument('--value-weight', type=float, default=0.5)
     parser.add_argument('--clip-threshold', type=float, default=0.1)
-    parser.add_argument('--entorpy-weight', type=float, default=0.01)
+    parser.add_argument('--entropy-weight', type=float, default=0.01)
     parser.add_argument('--gauss-sigma', type=float, default=1)
 
     # RAINBOW args
@@ -45,6 +45,8 @@ def parse_args(defaults):
     parser.add_argument('--omega', type=float, default=0.6) # priority
     parser.add_argument('--n-steps', type=int, default=4) # n_step td
     parser.add_argument('--std-init', type=float, default=0.1) # noisy nets init
+
+
     parser.add_argument('--atoms', type=int, default=51)
     parser.add_argument('--v-min', type=float, default=-10)
     parser.add_argument('--v-max', type=float, default=10)
@@ -52,7 +54,6 @@ def parse_args(defaults):
 
     # Convergence args
     parser.add_argument('--lr', type=float, default=1e-3)
-    parser.add_argument('--grad-clip', type=float, default=0.5)
     parser.add_argument('--float64', action='store_true')
 
     parser.add_argument('--epochs', type=int, default=8)
@@ -77,6 +78,8 @@ def parse_args(defaults):
 
     parser.add_argument('--eval', action='store_true')
     parser.add_argument('--eval-episodes', type=int, default=50)
+    parser.add_argument('--experiment', type=str, default="")
+
     parser.set_defaults(**defaults)
 
 
@@ -135,6 +138,8 @@ def get_config(defaults=None):
 
     config.dtype = jnp.float64 if config.float64 else jnp.float32
 
-
-    config.logging_dir = f'logs/{config.env}/{config.geometry}/{config.seed}/'
+    if len(config.experiment) > 0:
+        config.logging_dir = f'logs/{config.experiment}/{config.env}/{config.geometry}/{config.seed}'
+    else:
+        config.logging_dir = f'logs/{config.env}/{config.geometry}/{config.seed}'
     return config

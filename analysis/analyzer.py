@@ -18,6 +18,7 @@ class Analyzer:
     def __init__(self, config):
         self.data = defaultdict(list)
         self.check_distribution = config.check_distribution
+        self.analyze = config.analyze
         self.rollout_tracker = 1
         self.track_every = 50 # in rollouts
         self.heatmap_dir = f'{config.logging_dir}/heatmaps/'
@@ -111,7 +112,9 @@ class Analyzer:
     def step(self, stats):
         if 'cov' in stats:
             self.make_heatmap(stats.pop('cov'))
-        self.track_effective_rank(stats.pop('embeddings'))
+
+        if self.analyze:
+            self.track_effective_rank(stats.pop('embeddings'))
 
         if self.check_distribution:
             self.distribution_analysis(stats.pop('values_distribution'), stats.pop('returns'))
