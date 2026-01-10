@@ -1,47 +1,1 @@
-require(ggplot2)
-require(tidyverse)
-require(scales)
-
-data <- read.csv('data/dynamic.csv')
-grouping <- c('environment', 'geometry', 'seed')
-
-clean_labels <- function(x) {
-  str_replace_all(x, "_", " ") |>
-    str_to_title()
-}
-
-# Read the JSON file
-color_map <- fromJSON("color.json")
-
-# Average seed
-data <- data %>% group_by(environment, geometry, steps) %>%
-                 summarise(returns=mean(returns)) %>% ungroup()
-
-p <- ggplot(data, aes(x=steps, y=returns, color=geometry)) + geom_smooth() +
-  scale_x_continuous(labels=scales::label_number(scale_cut=cut_short_scale())) +
-  ylab("Returns") +
-  xlab("Environment interactions (Frames)") +
-  scale_color_manual(values = color_map$dark, labels = clean_labels) +
-  facet_wrap(~environment, scales = "free_y", labeller = labeller(environment = clean_labels)) +
-  theme(
-    legend.position = "bottom",
-    legend.direction = "horizontal",
-    legend.title = element_blank(),
-    legend.key = element_blank(),
-    legend.text = element_text(size = 12),
-    strip.text = element_text(size = 14),
-    axis.title = element_text(size = 12),
-    axis.title.x = element_text(margin = margin(t = 10)),
-    legend.spacing.y = unit(0, "cm"),
-    plot.margin = margin(t = 0, r = 0, b = 0, l = 0)
-  ) +
-  guides(color = guide_legend(override.aes = list(fill = NA)))
-
-ggsave(
-  filename = "plots/returns.pdf",
-  plot = p,
-  width = 7,
-  height = 5.5,
-  units = "in",
-  device = cairo_pdf
-)
+require(ggplot2)require(tidyverse)require(scales)data <- read.csv('data/dynamic.csv')grouping <- c('environment', 'geometry', 'seed')clean_labels <- function(x) {  str_replace_all(x, "_", " ") |>    str_to_title()}# Read the JSON filecolor_map <- fromJSON("color.json")# Average seeddata <- data %>% group_by(environment, geometry, steps) %>%                 summarise(returns=mean(returns)) %>% ungroup()p <- ggplot(data, aes(x=steps, y=returns, color=geometry)) + geom_smooth() +  scale_x_continuous(labels=scales::label_number(scale_cut=cut_short_scale())) +  ylab("Returns") +  xlab("Environment interactions (Frames)") +  scale_color_manual(values = color_map$dark, labels = clean_labels) +  facet_wrap(~environment, scales = "free_y", labeller = labeller(environment = clean_labels)) +  theme(    legend.position = "bottom",    legend.direction = "horizontal",    legend.title = element_blank(),    legend.key = element_blank(),    legend.text = element_text(size = 12),    strip.text = element_text(size = 14),    axis.title = element_text(size = 12),    axis.title.x = element_text(margin = margin(t = 10)),    legend.spacing.y = unit(0, "cm"),    plot.margin = margin(t = 0, r = 0, b = 0, l = 0)  ) +  guides(color = guide_legend(override.aes = list(fill = NA)))ggsave(  filename = "plots/returns.pdf",  plot = p,  width = 7,  height = 5.5,  units = "in",  device = cairo_pdf)
