@@ -1,8 +1,6 @@
 require(ggplot2)
 require(tidyverse)
 require(scales)
-require(knitr)
-require(kableExtra)
 require(jsonlite)
 require(stringr)
 
@@ -38,7 +36,7 @@ data <- data %>% mutate(returns=returns / returns[file=='0'])
 p <- ggplot(data, aes(x=file, y=returns, color=geometry)) +
   geom_smooth() +
   scale_x_continuous(labels=scales::label_number(scale_cut=cut_short_scale())) +
-  ylab("Returns") +
+  ylab("Performance compared to original (ratio)") +
   xlab(expression("Sticky probability (" * varsigma * ")")) +
   scale_color_manual(values = color_map$dark, labels = clean_labels) +
   facet_wrap(~environment, scales = "free_y", labeller = labeller(environment = clean_labels)) +

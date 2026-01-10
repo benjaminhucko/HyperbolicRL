@@ -1,4 +1,6 @@
 # Hyperbolic Reinforcement learning
+
+To reproduce the experiments from the paper, run the following command:
 ```bash
-python main.py --check-distribution --geometry hyperbolic --distributional --float64 --gauss-sigma 0.5
+python main.py perform_experiments.py
 ```
