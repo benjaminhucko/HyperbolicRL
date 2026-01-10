@@ -3,15 +3,24 @@ require(tidyverse)
 require(scales)
 require(knitr)
 require(kableExtra)
+require(jsonlite)
+require(stringr)
 
-data_sim <- read.csv('data/normal.csv')
-data_real <- read.csv('data/sticky_action.csv')
-
-data_sim$file <- "original"
-data_real$file <- "sticky_actions"
-data <- rbind(data_sim, data_real)
-
+data <- read.csv('data/eval.csv')
 grouping <- c('environment', 'geometry', 'seed', 'file')
+
+
+clean_labels <- function(x) {
+  str_replace_all(x, "_", " ") |>
+    str_to_title()
+}
+
+# Read the JSON file
+color_map <- fromJSON("color.json")
+
+data <- data %>% filter(file <= 0.25)
+
+# MAYBE PLOT PERFORMANCE DECREASE + TABLE
 
 # reshape 
 data <- data %>% group_by(across(all_of(grouping))) %>%
@@ -21,26 +30,39 @@ data <- data %>% group_by(across(all_of(grouping))) %>%
 
 # Average seed and samples
 data <- data %>% group_by(environment, geometry, file) %>%
-  summarise(mean=mean(values), stdev=sd(values))
+  summarise(returns=mean(values))
 
-# Comparison
-data <- data %>% group_by(environment, file) %>%
-  mutate(is_best = mean == max(mean)) %>%
-  ungroup()
+# to percentage
+data <- data %>% mutate(returns=returns / returns[file=='0'])
 
-data <- data %>% mutate(mean_sd=paste0(round(mean, 1), " ± ", round(stdev, 1))) %>%
-  mutate(mean_sd = ifelse(is_best, paste0("\\textbf{", mean_sd, "}"), mean_sd)) %>%
-  select(-c(mean, stdev, is_best))
+p <- ggplot(data, aes(x=file, y=returns, color=geometry)) +
+  geom_smooth() +
+  scale_x_continuous(labels=scales::label_number(scale_cut=cut_short_scale())) +
+  ylab("Returns") +
+  xlab(expression("Sticky probability (" * varsigma * ")")) +
+  scale_color_manual(values = color_map$dark, labels = clean_labels) +
+  facet_wrap(~environment, scales = "free_y", labeller = labeller(environment = clean_labels)) +
+  theme(
+    legend.position = "bottom",
+    legend.direction = "horizontal",
+    legend.title = element_blank(),
+    legend.key = element_blank(),
+    legend.text = element_text(size = 12),
+    strip.text = element_text(size = 14),
+    axis.title = element_text(size = 12),
+    axis.title.x = element_text(margin = margin(t = 10)),
+    legend.spacing.y = unit(0, "cm"),
+    plot.margin = margin(t = 0, r = 0, b = 0, l = 0)
+  ) +
+  guides(color = guide_legend(override.aes = list(fill = NA)))
 
-data <- data %>% pivot_wider(
-    names_from = geometry,
-    values_from = mean_sd
-  )
 
-data <- data %>% select(file, environment, everything()) %>% arrange(file) %>%
-  rename(state = file) %>% mutate(environment = gsub("_", " ", environment),
-                                   state = gsub("_", " ", state))
 
-kable(data, format = "latex", booktabs = TRUE, escape = FALSE, linesep = "",
-      caption = "Evaluation Returns on the same envionment compared to environment with sticky actions") %>%
-  row_spec(row = 4, extra_latex_after = "\\addlinespace")
+ggsave(
+  filename = "plots/eval.pdf",
+  plot = p,
+  width = 7,
+  height = 5.5,
+  units = "in",
+  device = cairo_pdf
+)

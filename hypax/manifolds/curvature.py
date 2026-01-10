@@ -19,8 +19,7 @@ class Curvature(nnx.Module):
                     curvature of the manifold. By default uses softplus to guarantee
                     positive curvature.
             """
-        if jnp.any(value <= 0):
-            raise ValueError(f"Curvature must be positive, got {value}")
+
         value = jnp.asarray(value, dtype=param_dtype)
         self.learnable = nnx.static(learnable)
         if learnable:
@@ -30,6 +29,10 @@ class Curvature(nnx.Module):
         else:
             self.value = nnx.static(value.item())
             self.constraining_strategy = nnx.identity
+
+        curvature = self.__call__()
+        if jnp.any(curvature <= 0):
+            raise ValueError(f"Curvature must be positive, got {curvature}")
 
     def __call__(self):
         if self.learnable:

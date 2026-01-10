@@ -1,4 +1,5 @@
 import json
+import pprint
 
 import jax
 from flax import nnx
@@ -8,6 +9,7 @@ from agents.agent_factory import make_agent
 from agents.random_policy import RandomPolicy
 from analysis.analyzer import Analyzer
 from analysis.evaluator import Evaluator
+from analysis.model_serializer import ModelSerializer
 from buffer import make_buffer
 from config import get_config
 from environment import make_env, visualize_performance, StickyAction
@@ -37,7 +39,7 @@ def train_agent(env, config, rngs):
     logger = Logger(config)
     analyzer = Analyzer(config)
     with open(f'{config.logging_dir}/config.txt', 'w+') as f:
-        print(vars(config), file=f)
+        pprint.pprint(vars(config), stream=f)
 
     obs_shape, n_actions = env.observation_shape(), env.action_space().n
     n_channels = obs_shape[-1] if config.geometry != 'hyperbolic' else obs_shape[0]
@@ -60,40 +62,49 @@ def train_agent(env, config, rngs):
 
     return agent
 
-def eval_agent(env_name, policy, rngs, obs_shape, config, sticky_sigma=0.0):
-    xenv = make_env(env_name, num_envs=config.eval_episodes, obs_shape=obs_shape)
+def eval_agent(xenv, policy, rngs, config, sticky_sigma=0.0):
     if sticky_sigma > 0:
-        xenv = StickyAction(xenv, sigma=sticky_sigma)
+        env = StickyAction(xenv, sigma=sticky_sigma)
+    else:
+        env = xenv
 
-    policy = nnx.jit(policy)
     finished = jnp.zeros((config.eval_episodes,))
     returns = jnp.zeros((config.eval_episodes,))
 
-    obs = xenv.reset(rngs())
+    obs = env.reset(rngs())
     while not jnp.all(finished):
         action, aux = policy(obs, rngs())
-        obs, reward, dones = xenv.step(action, rngs())
+        obs, reward, dones = env.step(action, rngs())
         finished = jnp.where(dones, True, finished)
         returns = jnp.where(finished, returns, returns + reward)
     return returns
 
 def real_to_sim_gap_eval(env_name, policy, rngs, obs_shape, config):
     evaluator = Evaluator(config)
-    for sticky_chance in range(0, 50, 5):
+    policy = nnx.jit(policy)
+    xenv = make_env(env_name, num_envs=config.eval_episodes, obs_shape=obs_shape)
+    for sticky_chance in tqdm(range(0, 26, 1), desc='eval sticky chance'):
         sticky_sigma = sticky_chance / 100.0
-        returns = eval_agent(env_name, policy, rngs, obs_shape, config, sticky_sigma)
+        returns = eval_agent(xenv, policy, rngs, config, sticky_sigma)
         evaluator.log(sticky_sigma, returns)
 
 def run_experiment(config):
-    obs_shape = 'channel_first' if config.geometry == 'hyperbolic' else 'channel_last'
-    env = make_env(config.env, config.num_envs, obs_shape)
+    obs_format = 'channel_first' if config.geometry == 'hyperbolic' else 'channel_last'
+    env = make_env(config.env, config.num_envs, obs_format)
     rngs = nnx.Rngs(config.seed)
-
-    agent = train_agent(env, config, rngs)
+    serializer = ModelSerializer(config)
+    if not serializer.ckpt_exists():
+        agent = train_agent(env, config, rngs)
+        serializer.save(agent.policy.model)
+    else:
+        obs_shape, n_actions = env.observation_shape(), env.action_space().n
+        n_channels = obs_shape[-1] if config.geometry != 'hyperbolic' else obs_shape[0]
+        agent = make_agent(config.strategy, n_channels, n_actions, rngs, config)
+        agent.policy.model = serializer.load(agent.policy.model)
     if config.eval:
-        real_to_sim_gap_eval(config.env, agent.eval_policy(), rngs, obs_shape, config)
+        real_to_sim_gap_eval(config.env, agent.eval_policy(), rngs, obs_format, config)
     if config.visualize:
-        visualize_performance(config.env, agent.eval_policy(), rngs(), obs_shape, config)
+        visualize_performance(config.env, agent.eval_policy(), rngs(), obs_format, config)
 
 def main():
     config = get_config()

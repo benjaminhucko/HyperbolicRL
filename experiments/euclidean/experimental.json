@@ -1,0 +1,15 @@
+{
+  "geometry": "euclidean",
+  "distributional": true,
+  "epochs": {
+    "breakout": 10,
+    "asterix": 10,
+    "freeway": 10,
+    "space_invaders": 10
+  },
+  "num_envs": 16,
+  "updates": 50,
+  "hidden_features": 32,
+  "lr": 1e-3,
+  "experiment": "param_search_32_hidden"
+}

@@ -1,0 +1,12 @@
+{
+  "light":
+    {
+      "hyperbolic": "#FFF2CC",
+      "euclidean": "#DAE8FC"
+    },
+  "dark":
+    {
+      "hyperbolic": "#D6B656",
+      "euclidean": "#6C8EBF"
+    }
+}

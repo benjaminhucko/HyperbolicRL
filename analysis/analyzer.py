@@ -152,7 +152,7 @@ class Analyzer:
         return stats
 
     def analyze_grads(self):
-        return self.rollout_tracker % self.track_every == 0
+        return self.analyze and (self.rollout_tracker % self.track_every == 0)
 
     @staticmethod
     @nnx.jit(static_argnames=['value_loss_fn', 'clip_threshold', 'value_weight', 'regularization'])

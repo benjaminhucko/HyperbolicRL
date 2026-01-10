@@ -9,6 +9,7 @@ from networks.euclidean import Critic, ActorCritic
 from networks.hybrid import HybActorCritic, HybCritic
 from networks.hyperbolic import HCritic, HActorCritic
 from networks.hyper import HyperCritic, HyperActorCritic
+import jax.numpy as jnp
 
 
 def make_network(in_shape, out_shape, rngs, config):
@@ -35,8 +36,10 @@ def make_network(in_shape, out_shape, rngs, config):
                       'config': config}
 
     if config.geometry != 'euclidean':
-        init_val = 1 if config.learn_curvature else 0.01 # NEXT TRY 0.1
-        network_inputs['manifold'] = PoincareBall(Curvature(init_val, learnable=config.learn_curvature))
+        init_val = config.curvature # NEXT TRY 0.1
+        act_fn = nnx.softplus
+        network_inputs['manifold'] = PoincareBall(Curvature(init_val, constraining_strategy=act_fn,
+                                                            learnable=config.learn_curvature))
     if not config.duelling and config.strategy == 'dqn':
         return critic(**network_inputs)
     else:

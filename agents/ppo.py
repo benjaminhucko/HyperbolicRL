@@ -173,6 +173,5 @@ class PPOAgent(Agent):
         return self.policy
 
     def eval_policy(self):
-        # self.policy.eval = True
         return self.policy
 

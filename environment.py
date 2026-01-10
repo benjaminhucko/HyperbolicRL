@@ -148,11 +148,10 @@ class StickyAction:
 
     def step(self, action, key):
         key, sticky_action_key = jax.random.split(key, 2)
-        next_actions = action
 
         if self.past_actions is not None:
             p = jax.random.uniform(sticky_action_key, shape=action.shape[0])
             action = jnp.where(p < self.sigma, self.past_actions, action)
 
-        self.past_actions = next_actions
+        self.past_actions = action
         return self.env.step(action, key)

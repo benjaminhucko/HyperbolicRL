@@ -1,0 +1,18 @@
+{
+  "experiment": "new_space_invaders",
+  "geometry": "hyperbolic",
+  "distributional": true,
+  "curvature": {
+    "breakout": 1e-4,
+    "asterix": 1e-2,
+    "freeway": 1e-2,
+    "space_invaders": 1e-3
+  },
+  "float64": true,
+  "epochs": {
+    "breakout": 30,
+    "asterix": 15,
+    "freeway": 15,
+    "space_invaders": 30
+  }
+}

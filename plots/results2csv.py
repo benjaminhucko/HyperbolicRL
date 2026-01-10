@@ -87,13 +87,12 @@ def traverse_category(base_dir, category, tensorboard=False):
         writer.writerows(rows)
 
 def main():
-    base_dir = Path('../logs')
-    traverse_category(base_dir, 'normal')
-    traverse_category(base_dir, 'sticky_action')
-    traverse_category(base_dir, 'heatmaps')
-    traverse_category(base_dir, 'plots')
+    base_dir = Path('../logs_paper')
+    traverse_category(base_dir, 'eval')
+    # traverse_category(base_dir, 'heatmaps')
+    # traverse_category(base_dir, 'plots')
     traverse_category(base_dir, 'dynamic', tensorboard=True)
-    # traverse_category(base_dir, 'stationary', tensorboard=True)
+    # traverse_category(base_dir, 'stationary',R tensorboard=True)
 
 
 

@@ -77,8 +77,11 @@ def parse_args(defaults):
     parser.add_argument('--check-distribution', action='store_true')
 
     parser.add_argument('--eval', action='store_true')
-    parser.add_argument('--eval-episodes', type=int, default=50)
+    parser.add_argument('--eval-episodes', type=int, default=200)
     parser.add_argument('--experiment', type=str, default="")
+
+    parser.add_argument('--curvature', type=float, default=0.01)
+
 
     parser.set_defaults(**defaults)
 
